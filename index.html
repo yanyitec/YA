@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <script type="text/javascript" src="lib/YA.js"></script>
+        <style type="text/css">
+.validate-error{
+    color:red;
+}
+.validate-success{
+    color:green;
+}
+        </style>
+    </head>
+    <body>
+        
+        
+        <div id="demo"></div>
+        <script>
+var users = {
+    
+    fields:[
+        {
+            name:"Id",
+            permission:"Hidden"
+        }
+        ,{
+            name:"Username"
+            ,validations:{
+                required:true
+                ,length:{min:5,max:200}
+                ,unique:{url:"user/check"}
+            }
+        }
+        ,{
+            name:"Password"
+            ,type:"password"
+            ,validations:{
+                required:true
+                ,length:{min:8,max:60}
+            }
+        }
+        ,{
+            name:"Email"
+            ,type:"email"
+            ,validations:{
+                required:true
+                ,length:{min:8,max:60}
+            }
+        }
+        ,{
+            name:"Gender"
+            ,type:"dropdown"
+            ,options:{
+                url:"enum/genders"
+            }
+        }
+    ]
+    ,views:{
+        "create":{
+            url:"user/create"
+            ,viewType:"edit"
+            ,fields:{
+                "Id":"Hidden"
+                ,"Username": "Editable"
+                ,"Password":"Editable"
+                ,"Email":"Editable"
+                ,"Gender":"Editable"
+            }
+        }
+        ,"query":{
+            url:"user/query"
+            ,viewType:"query"
+            ,fields:{
+                "Id":{"permission":"hidden"}
+                ,"Username":{
+                    "filterType":"Like"
+                    ,"filterImportant":true
+                }
+            }
+        }
+    }
+};
+
+        </script>
+    </body>
+</html>
