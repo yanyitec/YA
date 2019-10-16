@@ -358,6 +358,10 @@ return funcs;
         static paths:{[name:string]:DPath};
     }
     let DPaths = DPath.paths={};
+    DPaths[""] = {
+        getValue:(data:any)=>data,
+        setValue:(data:any,value:any)=>{}
+    };
 
     export function extend(...args:any[]):any{
         let obj = arguments[0]||{};
@@ -601,12 +605,6 @@ return funcs;
          */
         Readonly,
 
-
-        /**
-         * 可查询
-         */
-        Queryable,
-
         /**
         * 隐藏
          */
@@ -624,6 +622,16 @@ return funcs;
         edit,
         list,
         query
+    }
+
+    export enum QueryTypes{
+
+        Equal,
+        GreaterThan,
+        GreaterThanOrEqual,
+        LessThan,
+        LessThanOrEqual,
+        Range
     }
 
     export interface IFieldset{
@@ -691,6 +699,9 @@ return funcs;
         validations?:{[name:string]:any};
 
         perm?:Permissions|string;
+
+        queryable?:QueryTypes|string;
+
         group?:string;
     }
 
@@ -707,9 +718,12 @@ return funcs;
         fields:Field[];
         viewType:ViewTypes;
 
-        bas_dpath?:string;
-        list_bas_dpath?:string;
-        filter_bas_dpath?:string;
+        dpath:DPath;
+        filter_dpath:DPath;
+        rows_dpath:DPath;
+        total_dpath:DPath;
+        pageIndex_dpath:DPath;
+        pageSize_dpath:DPath;
     }
 
     export interface IFieldsetOpts{
@@ -718,9 +732,11 @@ return funcs;
 
         viewType?:ViewTypes|string;
 
-        bas_dpath?:string;
-        list_bas_dpath?:string;
+        dpath?:string;
+        rows_bas_dpath?:string;
         filter_bas_dpath?:string;
+        pageSize_dpath?:string;
+        pageIndex_dpath?:string;
     }
 
     export class Fieldset{
@@ -749,9 +765,17 @@ return funcs;
                 viewOpts = extend({},fsOpts);
                 viewOpts.fields = fields;
                 if(typeof fsOpts.viewType==="string") viewOpts.viewType = ViewTypes[fsOpts.viewType];
+                
+                viewOpts.dpath = DPath.fetch((viewOpts.dpath as any)||"");
+                if(viewOpts.filter_dpath)viewOpts.filter_dpath = DPath.fetch(viewOpts.filter_dpath as any);
+                viewOpts.rows_dpath = DPath.fetch((viewOpts.rows_dpath as any)||"");
+                if(viewOpts.total_dpath) viewOpts.total_dpath = DPath.fetch(viewOpts.total_dpath as any);
+                if(viewOpts.pageIndex_dpath) viewOpts.pageIndex_dpath = DPath.fetch(viewOpts.pageIndex_dpath as any);
+                if(viewOpts.pageSize_dpath) viewOpts.pageSize_dpath = DPath.fetch(viewOpts.pageSize_dpath as any);
+
                 this._viewOpts[name] = viewOpts;
             }
-            return null;
+            return new FieldsetView(viewOpts,initData,perms);
         }
     }
 
@@ -783,6 +807,7 @@ return funcs;
                     fieldOpts.push(fOpts);
                 }
             }else fieldOpts = viewFieldOpts;
+
             for(let i=0,j=fieldOpts.length;i<j;i++){
                 let fieldOpt = deepClone(fieldOpts[i]);
                 for(let j=0,k=entityFieldOpts.length;j<k;j++){
@@ -802,17 +827,30 @@ return funcs;
     export class FieldsetView{
         opts:IInternalFieldsetOpts;
         viewType:ViewTypes;
+        columns:Field[];
+        
+        /**
+         * 各域的权限，该参数一般来自初始化后获取数据时服务器端带过来
+         *
+         * @type {{[fname:string]:string}}
+         * @memberof FieldsetView
+         */
         permissions:{[fname:string]:string};
         data:any;
         element :HTMLElement;
         views:{[name:string]:FieldView};
-        rows:{[name:string]:FieldView};
+        rows:Array<{[name:string]:FieldView}>;
 
-        constructor(opts:IInternalFieldsetOpts,initData:any,perms:any){
+        
+
+
+        constructor(opts:IInternalFieldsetOpts,initData:any,perms:{[fname:string]:string}){
             this.permissions = perms||{};
             this.opts = opts;
             this.data = merge({},initData);
             this.viewType = opts.viewType;
+
+            
         }
 
         render(wrapper?:HTMLElement):HTMLElement{
@@ -820,33 +858,228 @@ return funcs;
             else this.element = wrapper;
             if(!wrapper) this.element = wrapper = YA.createElement("div");
             else wrapper.innerHTML = "";
+            
+            switch(this.viewType){
+                case ViewTypes.detail:this._renderExpandFields(wrapper,ViewTypes.detail);break;
+                case ViewTypes.edit:this._renderExpandFields(wrapper, ViewTypes.edit);break;
+                case ViewTypes.query:this._renderQuery(wrapper);break;
+            }
+
             return wrapper;
         }
 
-        _renderDetail(){
+        _renderExpandFields(wrapper:HTMLElement,viewType:ViewTypes):HTMLElement{
             let opts = this.opts;
             let fields = opts.fields;
             let perms = this.permissions;
             let data = this.data;
-
-            let groups = {};
+            
+            let groups:{[name:string]:IGroup} = {};
+            let dftGroup;
+            
             for(let i =0,j=fields.length;i<j;i++){
                 let field = fields[i];
                 let perm = Permissions[perms[field.name]];
                 if(perm===undefined) perm = field.permission;
                 if(perm===Permissions.Denied) continue;
+                let fview :FieldView = this.views[field.name] = new FieldView(field,this,data);
+
+                let groupName = field.opts.group;
+                let group = groups[groupName];
                 
+                if(!group){
+                    group = groups[groupName] = makeGroup(groupName,this);
+                    if(!groupName) dftGroup = group;
+                    else if(!dftGroup) dftGroup = group;
+                    if(!group.views) group.views = {};
+                    group.content.innerHTML = "";
+                    wrapper.appendChild(group.element);
+                }
+                this.views[field.name]=group.views[field.name] = fview;
+                fview.group = group;
+                let fieldElement :HTMLElement;
+                
+                switch(viewType){
+                    case ViewTypes.detail:fieldElement = fview.detail();break;
+                    case ViewTypes.edit:
+                        if(perm === Permissions.Readonly) fieldElement = fview.detail();
+                        else fieldElement = fview.edit();
+                        break;
+                    case ViewTypes.query:
+                            fieldElement = fview.filter();
+                        break;
+                    default:throw new Error("错误的调用");
+                }
+                if(perm==Permissions.Hidden) fieldElement.style.display = "none";
+                group.content.appendChild(fieldElement);
+            }
+            return wrapper;
+        }
+
+        _renderQuery(wrapper?:HTMLElement){
+            if(!wrapper) wrapper = YA.createElement("div");
+            let form = YA.createElement("form");
+            form.className = "filter";
+            let filter = this._renderExpandFields(form,ViewTypes.query);
+            form.appendChild(filter);
+            wrapper.appendChild(form);
+            wrapper.appendChild(this._renderTable());
+            return wrapper;
+        }
+
+        _renderTable(){
+            
+            let tb = YA.createElement("table");
+            tb.appendChild(this._renderHead());
+            tb.appendChild(this._renderBody());
+            tb.appendChild(this._renderFoot());
+            return tb;
+
+        }
+        _renderHead():HTMLElement{
+            let opts = this.opts;
+            let fields = opts.fields;
+            let perms = this.permissions;
+            let thead = YA.createElement("thead");
+            let tr = YA.createElement("tr");thead.appendChild(tr);
+            this.columns=[];
+            for(let i =0,j=fields.length;i<j;i++){
+                let field = fields[i];
+                let perm = Permissions[perms[field.name]];
+                if(perm===undefined) perm = field.permission;
+                if(perm===Permissions.Denied) continue;
+                let th = YA.createElement("th");
+                th.innerHTML = this.TEXT(field.label||field.name);
+                tr.appendChild(th);
+                this.columns.push(field);
+            }
+            return thead;
+        }
+
+        _renderBody():HTMLElement{
+            let opts = this.opts;
+            let fields = opts.fields;
+            let perms = this.permissions;
+            let tbody = YA.createElement("tbody");
+            let rows = this.rows = [];
+            let columns = this.columns;
+            let rowDatas = this.opts.rows_dpath? this.opts.rows_dpath.getValue(this.data): this.data;
+            if(!rowDatas || rowDatas.length===0){
+                let tr = YA.createElement("tr");
+                let td = YA.createElement("td") as HTMLTableCellElement;tr.appendChild(td);
+                td.colSpan = this.columns.length;
+                td.innerHTML = this.TEXT("没有数据");
 
             }
+            for(let i = 0,j=rowDatas.lenght;i<j;i++){
+                let rowData = rowDatas[i];
+                let row = {};
+                let tr = YA.createElement("tr");
+                for(let m = 0,n= columns.length;m<n;m++){
+                    let field = columns[m];
+                    let fview = row[field.name] = new FieldView(field,this,rowData);
+                    let td = YA.createElement("td");
+                    td.appendChild(fview.cell());tr.appendChild(td);
+                }
+                tbody.appendChild(tr);
+            }
+            return tbody;
         }
+        _renderFoot(){
+            let tfoot = YA.createElement("tfoot");
+            let tr = YA.createElement("tr");tfoot.appendChild(tr);
+            let td = YA.createElement("td") as HTMLTableCellElement;tr.appendChild(td);
+            td.colSpan = this.columns.length;
+            if(this.opts.pageSize_dpath){
+                let total = parseInt(this.opts.total_dpath.getValue(this.data))||0;
+                let pageSize = parseInt(this.opts.pageSize_dpath.getValue(this.data))||5;
+                let pageIndex = parseInt(this.opts.pageIndex_dpath.getValue(this.data))||1;
+                
+                if(pageIndex<1 ) pageIndex=1;
+                let pageCount =  Math.ceil(total/pageSize);
+
+                let scollIndex = Math.ceil(pageIndex/pageCount);
+                
+                let pForm = YA.createElement("form");
+                if(scollIndex>1){
+                    let prevScroll = YA.createElement("A");
+                    prevScroll.innerHTML = "<<";
+                    pForm.appendChild(prevScroll);
+                }
+                if(pageIndex>1){
+                    let prevPage = YA.createElement("A");
+                    prevPage.innerHTML = "<";
+                    pForm.appendChild(prevPage);
+                }
+
+                let startPage = (pageIndex-1)*pageSize;
+                if(startPage==0)startPage=1;
+                let endPage = startPage + pageSize +1;
+                if(endPage>pageCount) endPage = pageCount;
+
+                for(let i=startPage;i<=endPage;i++){
+                    let pageA = YA.createElement("a");
+                    pageA.innerHTML = i.toString();
+                    if(i==pageIndex) pageA.className = "current";
+                    pForm.appendChild(pageA);
+                }
+
+                if(pageIndex<pageCount){
+                    let nextPage = YA.createElement("A");
+                    nextPage.innerHTML = ">";
+                    pForm.appendChild(nextPage);
+                }
+
+                if(endPage<pageCount){
+                    let nextScroll = YA.createElement("A");
+                    nextScroll.innerHTML = ">>";
+                    pForm.appendChild(nextScroll);
+                }
+
+                let logistic = YA.createElement("span");
+                let totalStr = this.TEXT("共{0}条记录,每页<input type='text' value='{1}' name='pageSize' />,<input type='text' value='{2}' name='pageIndex' />/{3}页<input type='submit' value='跳转' />")
+                    .replace("{0}",total.toString()).replace("{1}",pageSize.toString()).replace("{2}",pageIndex.toString()).replace("{3}",pageCount.toString());
+                
+                logistic.innerHTML = totalStr;
+
+                pForm.appendChild(logistic);
+
+                td.appendChild(pForm);
+            }
+            
+            return tfoot;
+
+        }
+
+
         TEXT(text:string):string{
             return text;
         }
 
     }
+    export interface IGroup{
+        name:string;
+        element:HTMLElement;
+        legend:HTMLElement;
+        content:HTMLElement;
+        views?:{[name:string]:FieldView};
+    }
 
-
-    
+    export let makeGroup:(groupName:string,fsView:FieldsetView)=>IGroup = 
+    function makeGroup(groupName:string,fsView:FieldsetView):IGroup{
+        let gp = YA.createElement("fieldset") as HTMLFieldSetElement;
+        let legend = YA.createElement("legend") as HTMLLegendElement;
+        legend.innerHTML = fsView.TEXT(groupName);
+        let content = YA.createElement("div") as HTMLDivElement;
+        gp.appendChild(legend);gp.appendChild(content);
+        return {
+            name:groupName
+            ,element:gp
+            ,legend:legend
+            ,content:content
+        };
+        
+    }
     
 
     export class Field{
@@ -860,8 +1093,10 @@ return funcs;
         fieldset:Fieldset;
         permission:Permissions;
         className:string;
+        group:string;
+        queryable:QueryTypes;
 
-        componentMaker:(field:Field,initValue:any,editable:boolean)=>IComponentWrapper;
+        componentMaker:(field:Field,initValue:any,editable:boolean)=>IFieldComponent;
         //dataViewCreator:(field:Field,fieldView:FieldView)=>IFieldViewAccessor;
     
         constructor(fieldOpts:IFieldOpts,fieldset?:Fieldset){
@@ -869,6 +1104,8 @@ return funcs;
             this.fieldset = fieldset;
             this.type = fieldOpts.type || "text";
             this.name = fieldOpts.name;
+            this.group = fieldOpts.group|| "";
+            this.queryable = typeof fieldOpts.queryable==="string"?QueryTypes[fieldOpts.queryable]:fieldOpts.queryable;
             
             this.label = fieldOpts.label || this.name;
             this.validations = fieldOpts.validations || {};
@@ -912,7 +1149,7 @@ return funcs;
         }
     }
 
-    export interface IComponentWrapper{
+    export interface IFieldComponent{
         element:HTMLElement;
         getViewValue:()=>any;
         setViewValue:(value:any)=>any;
@@ -959,7 +1196,7 @@ return funcs;
 
 
     let fieldComponents:any ={};
-    fieldComponents.text = (field:FieldView,initValue:any,editable:boolean):IComponentWrapper =>{
+    fieldComponents.text = (field:FieldView,initValue:any,editable:boolean):IFieldComponent =>{
         let elem:HTMLElement;
         let getViewValue :()=>any;
         let setViewValue:(val:any)=>void;
@@ -1001,6 +1238,7 @@ return funcs;
         element:HTMLElement;
         getViewValue:()=>any;
         setViewValue:(val:any)=>any;
+        group?:IGroup;
 
         constructor(field:Field,fsv:FieldsetView,data:any){
             this.field =field;
@@ -1016,10 +1254,13 @@ return funcs;
         }
 
         detail(){
-            return this._detailOrEdit(false);
+            return this._detailOrEdit(false,false);
         }
-        edit(){
-            return this._detailOrEdit(true);
+        edit(requireStar?:boolean){
+            return this._detailOrEdit(true,true);
+        }
+        filter(){
+            return this._detailOrEdit(true,false);
         }
         label(){
             return this._label(this.field,false);
@@ -1040,7 +1281,7 @@ return funcs;
             return wrapper;
         }
 
-        _detailOrEdit(editable:boolean){
+        _detailOrEdit(editable:boolean,requireStar:boolean){
             let wrapper = this.element;
             let field = this.field;
             if(wrapper)wrapper.innerHTML="";
@@ -1048,7 +1289,7 @@ return funcs;
 
             let fieldWrapper = YA.createElement("div");
             fieldWrapper.className = field.className;
-            fieldWrapper.appendChild(this._label(field,true));
+            fieldWrapper.appendChild(this._label(field,requireStar));
 
             let inputComp = field.componentMaker(field,field.dpath.getValue(this.data),editable);
             inputComp.element.className = "field-input";
