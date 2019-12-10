@@ -1,7 +1,7 @@
 {
     "compilerOptions": {
-        "module":"none",   //指定生成哪个模块系统代码
-        "target": "es3",
+        "module":"UMD",   //指定生成哪个模块系统代码
+        "target": "es5",
         "noImplicitAny": false, //在表达式和声明上有隐含的'any'类型时报错。
         //"sourceMap": true,     //用于debug   
         "rootDir":"./ts/",      //仅用来控制输出的目录结构--outDir。
@@ -11,6 +11,7 @@
         "declaration":true   ,
         "removeComments":false,
         "jsx":"react",
+        "experimentalDecorators":true
         //"outFile": "lib/require.js"
     },
     //"files":["ts/promise.ts","ts/require.ts"],

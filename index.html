@@ -7,6 +7,16 @@
 .validate-error{
     color:red;
 }
+.validate-error input,.validate-error select,.validate-error textarea{
+    border-color: red;
+}
+.validate-success{
+    color:green;
+}
+.validate-success input,.validate-error select,.validate-error textarea{
+    border-color: green;
+}
+
 .validate-success{
     color:green;
 }
@@ -16,7 +26,6 @@
         <div id="demo"></div>
         <script>
 var users = {
-    
     fields:[
         {
             name:"Id",
@@ -57,18 +66,22 @@ var users = {
     ,views:{
         "create":{
             url:"user/create"
-            ,viewType:"edit"
+            ,viewType:"Edit"
             ,fields:{
                 "Id":"Hidden"
-                ,"Username": "Editable"
-                ,"Password":"Editable"
-                ,"Email":"Editable"
-                ,"Gender":"Editable"
+                ,"Username": "Writable"
+                ,"Password":"Writable"
+                ,"Email":"Writable"
+                ,"Gender":"Writable"
+                ,"Submit":{
+                    type:"submit",
+                    label:"提交"
+                }
             }
         }
         ,"query":{
             url:"user/query"
-            ,viewType:"query"
+            ,viewType:"Query"
             ,fields:{
                 "Id":{"permission":"hidden"}
                 ,"Username":{
@@ -79,6 +92,10 @@ var users = {
         }
     }
 };
+
+var fs = new YA.Fieldset(users);
+var view =fs.createView("create",{});
+view.render(document.getElementById("demo"));
 
         </script>
     </body>

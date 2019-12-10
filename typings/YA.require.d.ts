@@ -1,0 +1,313 @@
+declare let Reflect: any;
+declare namespace YA {
+    let trimRegx: RegExp;
+    class Exception extends Error {
+        internal_error: Error;
+        extra: any;
+        constructor(message: string, internalError?: any, extra?: any);
+    }
+    function is_array(obj: any): boolean;
+    function interceptable(): (target: any, propertyKey: string, descriptor: PropertyDescriptor) => void;
+    interface IThenable<T> {
+        then(onfullfilled?: (value: T) => void, onReject?: (value: any) => void): IThenable<T>;
+    }
+    interface ICompletable {
+        complete(onComplete: Function): ICompletable;
+    }
+    enum AwaitorStates {
+        padding = 0,
+        fulfilled = 1,
+        rejected = -1,
+    }
+    enum AwaitorTypes {
+        awaitor = 0,
+        deferrer = 1,
+    }
+    /**
+     * 简单的异步对象
+     *
+     * @export
+     * @class Awaitor<T>
+     */
+    class Awaitor<T> {
+        awaitor_status: AwaitorStates;
+        awaitor_value: any;
+        awaitor_type: AwaitorTypes;
+        success: (onfulfilled: (value: any) => void) => Awaitor<T>;
+        ok: (onfulfilled: (value: any) => void) => Awaitor<T>;
+        error: (onrejected: (value: any) => void) => Awaitor<T>;
+        catch: (onrejected: (value: any) => void) => Awaitor<T>;
+        resolve: (value: any) => void;
+        reject: (err: any) => void;
+        private _fulfillCallbacks;
+        private _rejectCallbacks;
+        constructor(asyncProcess?: {
+            (fulfill: (value: any) => void, reject: (err: any) => void): void;
+        }, resolveByApply?: boolean);
+        then(onfulfilled: (value: any) => void, onrejected: (err: any) => void): Awaitor<T>;
+        done(onfulfilled: (value: any) => void): Awaitor<T>;
+        fail(onrejected: (value: any) => void): Awaitor<T>;
+        complete(oncomplete: Function): Awaitor<T>;
+        static all(_awators: IThenable<any>[]): Awaitor<any>;
+        static race(_awators: IThenable<any>[]): Awaitor<any>;
+        static resolve(value?: any): Awaitor<any>;
+        static reject(err?: any): Awaitor<any>;
+    }
+    class DPath {
+        constructor(pathOrValue: any, type?: string);
+        getValue(data: any): any;
+        setValue(data: any, value: any): DPath;
+        static fetch(pathtext: string): DPath;
+        static const(value: any): DPath;
+        static dymanic(value: Function): DPath;
+        static paths: {
+            [name: string]: DPath;
+        };
+    }
+    /**
+     * a={dd}&b={d.s({a,b})}
+     *
+     * @export
+     * @class StringTemplate
+     */
+    class StringTemplate {
+        dpaths: any[];
+        text: string;
+        constructor(template: string);
+        replace(data: any): string;
+        static replace(template: string, data?: any): string;
+        static caches: {
+            [key: string]: StringTemplate;
+        };
+    }
+    /**
+     * 资源/模块状态
+     *
+     * @export
+     * @enum {number}
+     */
+    enum ResourceStates {
+        /**
+         * 被请求
+         */
+        required = 0,
+        /**
+         * 正在从 网站/本地或其他资源地址加载，但尚未完全返回。
+         */
+        loading = 1,
+        /**
+         * 已经从资源地址中载入，还在处理依赖关系
+         */
+        waiting = 2,
+        /**
+         * 所有依赖项已加载完成，但模块还在初始化中
+         */
+        initializing = 3,
+        /**
+         * 模块已经完全载入，包括依赖项与内置资源
+         */
+        completed = 4,
+        error = -1,
+    }
+    interface IResourceOpts {
+        url: string;
+        type?: string;
+    }
+    /**
+     * 可单独载入的js/css等资源
+     *
+     * @export
+     * @interface IResource
+     */
+    interface IResource extends IThenable<any>, ICompletable {
+        /**
+         * 资源的唯一编号
+         *
+         * @type {string}
+         * @memberof IResource
+         */
+        id: string;
+        /**
+         * 资源的Url
+         *
+         * @type {string}
+         * @memberof IResource
+         */
+        url: string;
+        /**
+         * 资源类型
+         *
+         * @type {string}
+         * @memberof IResource
+         */
+        type: string;
+        /**
+         * 资源在网页中占据的元素
+         *
+         * @type {*}
+         * @memberof IResource
+         */
+        element: any;
+        /**
+         * 资源状态
+         *
+         * @type {ResourceStates}
+         * @memberof IResource
+         */
+        status: ResourceStates;
+        /**
+         * state变化的原因
+         *
+         * @type {*}
+         * @memberof IResource
+         */
+        reason: any;
+        /**
+         * 添加或删除模块状态监听函数
+         * 如果返回false，则会从监听中把自己去掉。
+         *
+         * @param {(boolean|{(res:IResource):void})} addOrRemove
+         * @param {(res:IResource)=>void} [callback]
+         * @returns {IResource}
+         * @memberof IResource
+         */
+        statechange(addOrRemove: boolean | {
+            (res: IResource): void;
+        }, callback?: (res: IResource) => void): IResource;
+    }
+    class Resource extends Awaitor<any> implements IResource {
+        /**
+         * 资源的唯一编号
+         *
+         * @type {string}
+         * @memberof IResource
+         */
+        id: string;
+        /**
+         * 资源的Url
+         *
+         * @type {string}
+         * @memberof IResource
+         */
+        url: string;
+        /**
+         * 资源类型
+         *
+         * @type {string}
+         * @memberof IResource
+         */
+        type: string;
+        /**
+         * 资源在网页中占据的元素
+         *
+         * @type {*}
+         * @memberof IResource
+         */
+        element: any;
+        /**
+         * state变化的原因
+         *
+         * @type {*}
+         * @memberof IResource
+         */
+        reason: any;
+        /**
+         * 资源状态
+         *
+         * @type {ResourceStates}
+         * @memberof IResource
+         */
+        status: ResourceStates;
+        request_id: string;
+        private _resolve;
+        private _reject;
+        protected _statechangeCallbacks: {
+            (res: IResource): void;
+        }[];
+        constructor(opts: IResourceOpts);
+        /**
+         * 添加或删除模块状态监听函数
+         * 如果返回false，则会从监听中把自己去掉。
+         *
+         * @param {(boolean|{(res:IResource):void})} addOrRemove
+         * @param {(res:IResource)=>void} [callback]
+         * @memberof IResource
+         */
+        statechange(addOrRemove: boolean | {
+            (res: IResource): void;
+        }, callback?: (res: IResource) => void): IResource;
+        protected _makeUrl(url: string): string;
+        _changeState(status: ResourceStates, reason?: any): IResource;
+        protected _load(): void;
+        protected _doLoad(okCallback: (value: any) => void, errCallback: (err: any) => void): any;
+        protected _attatchEvents(elem: any, okCallback: any, errCallback: any): void;
+        protected _getResourceElementContainer(): any;
+    }
+    class StylesheetResource extends Resource {
+        constructor(opts: IResourceOpts);
+        protected _doLoad(okCallback: any, errCallback: any): HTMLLinkElement;
+    }
+    function makeUrl(url: string): string;
+    interface IDefineParams {
+        dependences?: string[];
+        defination?: Function;
+        content?: any;
+    }
+    /**
+     * 带着依赖项的资源
+     *
+     * @export
+     * @interface IModule
+     */
+    interface IModule extends IResource {
+        /**
+         * 模块内容，模块加载产生内容。
+         *
+         * @type {*}
+         * @memberof IModule
+         */
+        content: any;
+        /**
+         * 该模块的依赖项
+         *
+         * @type {IModule[]}
+         * @memberof IModule
+         */
+        dependences: IResource[];
+    }
+    class Module extends Resource implements IModule {
+        /**
+         * 模块内容，模块加载产生内容。
+         *
+         * @type {*}
+         * @memberof IModule
+         */
+        content: any;
+        /**
+         * 该模块的依赖项
+         *
+         * @type {IModule[]}
+         * @memberof IModule
+         */
+        dependences: IResource[];
+        _waitingDepsModuleList?: IModule[];
+        constructor(opts: IResourceOpts, waitingDepsModuleList?: IModule[]);
+        _load(): void;
+        protected _tryChangeState(status: ResourceStates, reason?: any): IModule;
+        _srcLoaded(): this;
+        private _depsReady(definer, depValues);
+        /**
+         * 把自己从“等待依赖项的模块列表”中移除
+         *
+         * @private
+         * @memberof Module
+         */
+        private _removeMeFroWaitingDepModuleList();
+    }
+    let cachedModules: {
+        [id: string]: Module;
+    };
+    function define(depNames: string | string[] | Function, definer: Function | any): void;
+    function require(depNames: string[] | string): ICompletable;
+    function resolveUrl(url: string, data?: any): any;
+}

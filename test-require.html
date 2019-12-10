@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <script type="text/javascript" src="lib/YA.require.js"></script> 
+    </head>
+    <body>
+        <div id="demo"></div>
+        <script>
+        YA.require(["lib/test/require/req-a.js"],(moduleA)=>{
+            console.log("moduleA is completed.");
+        })
+        let branceRegx = /\{([^\}]+)\}/gi;
+        let txts = "localhost/test.aspx?id={ab}&b={de}";
+        let match;
+        while(match = branceRegx.exec(txts)){
+            console.log(match);
+        }
+        
+        </script>
+    </body>
+</html>

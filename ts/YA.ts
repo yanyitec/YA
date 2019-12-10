@@ -8,8 +8,7 @@ namespace YA{
      * 常用正则表达式
      *========================================================*/
 
-    // 正则:去掉字符串首尾空白字符
-    export let trimRegx :RegExp = /(^\s+)|(\s+$)/gi;
+    
     // 正则:整数
     export let intRegx :RegExp = /^\s*(\+\-)?\d+\s*$/;
     // 正则: 数字，小数
@@ -29,10 +28,11 @@ namespace YA{
         data?:string;
         nocache?:boolean;
     }
-    export interface IThenable{
-        then(onFullfilled:Function,onReject?:Function):any;
+
+    export function ajax<T>(opts:IAjaxOpts):IThenable<T>{
+        return null;
     }
-    export let ajax:(opts:IAjaxOpts)=>IThenable;
+    
 
     /*=========================================================
      * trim 函数
@@ -57,9 +57,7 @@ namespace YA{
      * @param {*} obj
      * @returns
      */
-    export function isArray(obj){
-        return Object.prototype.toString.call(obj)==="[object Array]";
-    }
+    
 
     export function isObject(obj){
         return Object.prototype.toString.call(obj)==="[object Object]";
@@ -212,156 +210,6 @@ return funcs;
      *========================================================*/
 
     
-    /**
-     * 数据路径
-     * 给定一个字符串，比如 A.B.C
-     * 当调用getValue(obj)/setValue(obj,value)时，表示在obj.A.B.C上赋值
-     * 支持正向下标的数组表达式，比如 A.B[0].C,
-     * 还支持反向下标的数组表达式
-     * @export
-     * @class DPath
-     */
-    export class DPath{
-        
-        fromRoot:boolean;
-        constructor(pathOrValue:any,type?:string){
-            if(type==="const"){
-                this.getValue = (d)=>pathOrValue;
-                this.setValue = (d,v)=>{
-                    if(executionMode===ExecutionModes.Devalopment){console.warn("向一个const的DPath写入了值",this,d,v);}
-                    return this;
-                };
-                return;
-            }else if(type==="dynamic"){
-                this.getValue = (d)=>pathOrValue(d);
-                this.setValue = (d,v)=>{
-                    pathOrValue(d,v);
-                    return this;
-                };
-                return;
-            }
-            let path = pathOrValue as string;
-            //$.user.roles[0].permissions:first.id;
-            let lastAt:number= -1;
-            let lastTokenCode:number; 
-            let lastPropName:string;
-            let isLastArr :boolean;
-            let inBrace:boolean = false;
-            let getterCodes :Array<string> = [];
-            let setterCodes :Array<string> = ["var $current$;\n"];
-            let buildCodes = (txt:string,isArr?:boolean)=>{
-                if(isArr){
-                    getterCodes.push("$obj$=$obj$["+txt+"];if(!$obj$===undefined)return $obj$;\n");
-                }else {
-                    getterCodes.push("$obj$=$obj$."+txt+";if(!$obj$===undefined)return $obj$;\n");
-                }
-                if(lastPropName){
-                    if(isLastArr){
-                        setterCodes.push("$current$=$obj$["+lastPropName+"];if(!$current$) $obj$=$obj$["+lastPropName+"]="+(isArr?"[]":"{}")+";else $obj$=$current$;\n");
-                    }else{
-                        setterCodes.push("$current$=$obj$."+lastPropName+";if(!$current$) $obj$=$obj$."+lastPropName+"="+(isArr?"[]":"{}")+";else $obj$=$current$;\n");
-                    }
-                }
-                isLastArr = isArr;
-                lastPropName=txt;
-            }
-            
-            let tpath :string = "";
-            for(let at:number=0,len:number=path.length;at<len;at++){
-                let ch = path.charCodeAt(at);
-                // .
-                if(ch===46){
-                    if(inBrace) throw new Error("Invalid DPath:" + path);
-                    let txt = path.substring(lastAt+1,at).replace(trimRegx,"");
-                    if(txt===""){
-                        if(lastPropName && lastTokenCode!=93) throw new Error("Invalid DPath:" + path);
-                        lastTokenCode = ch;lastAt = at;continue;
-                    }
-                    lastPropName = txt;
-                    if(txt==="$") this.fromRoot = true;
-                    buildCodes(txt);
-                    lastTokenCode = ch;lastAt = at;continue;
-                }
-                
-                //[
-                else if(ch===91){
-                    if(inBrace) throw new Error("Invalid DPath:" + path);
-                    
-                    let txt = path.substring(lastAt+1,at).replace(trimRegx,"");
-                    if(txt===""){
-                        if(!lastPropName|| lastTokenCode!==93)  throw new Error("Invalid DPath:" + path);
-                        lastTokenCode = ch;lastAt = at;continue;
-                    }
-                    buildCodes(txt);
-                    inBrace = true;
-                    lastTokenCode = ch;lastAt = at;continue;
-                }
-                //]
-                else if(ch===93){
-                    if(!inBrace)  throw new Error("Invalid DPath:" + path);
-                    let txt = path.substring(lastAt+1,at).replace(trimRegx,"");
-                    if(txt==="")throw new Error("Invalid DPath:" + path);
-                    let match  =txt.match(lastRegx);
-                    if(match){
-                        txt= "$obj$.length-1" + match;
-                    }
-                    buildCodes(txt,true);
-                    inBrace = false;
-                    lastTokenCode = ch;lastAt = at;continue;
-                }
-                
-            }
-            if(inBrace)  throw new Error("Invalid DPath:" + path);
-            let txt = path.substr(lastAt+1).replace(trimRegx,"");
-            if(txt){
-                getterCodes.push("return $obj$."+txt+";\n");
-                if(lastPropName){
-                    if(isLastArr){
-                        setterCodes.push("$current$=$obj$["+lastPropName+"];if(!$current$) $obj$=$obj$["+lastPropName+"]={};else $obj$=$current$;\n");
-                    }else{
-                        setterCodes.push("$current$=$obj$."+lastPropName+";if(!$current$) $obj$=$obj$."+lastPropName+"={};else $obj$=$current$;\n");
-                    }
-                    
-                }
-                setterCodes.push("$obj$." + txt+"=$value$;\nreturn this;\n");
-            }else{
-                getterCodes.pop();
-                getterCodes.push("return $obj$["+lastPropName+"];");
-                if(isLastArr){
-                    setterCodes.push("$obj$["+lastPropName+"]=$value$;\nreturn this;\n");
-                }else{
-                    setterCodes.push("$obj$."+lastPropName+"=$value$;\nreturn this;\n");
-                }
-            }
-            
-            
-            let getterCode = getterCodes.join("");
-            let setterCode = setterCodes.join("");
-            this.getValue = new Function("$obj$",getterCode) as (d)=>any;
-            this.setValue = new Function("$obj$","$value$",setterCode) as (d,v)=>DPath;
-        }
-        getValue(data:any):any{}
-
-        setValue(data:any,value:any):DPath{
-            return this;
-        }
-        static fetch(pathtext:string):DPath{
-            return DPaths[pathtext] ||(DPaths[pathtext]= new DPath(pathtext));
-        }
-
-        static const(value:any):DPath{
-            return new DPath(value,"const");
-        }
-        static dymanic(value:Function):DPath{
-            return new DPath(value,"dynamic");
-        }
-        static paths:{[name:string]:DPath};
-    }
-    let DPaths = DPath.paths={};
-    DPaths[""] = {
-        getValue:(data:any)=>data,
-        setValue:(data:any,value:any)=>{}
-    };
 
     export function extend(...args:any[]):any{
         let obj = arguments[0]||{};
@@ -370,16 +218,6 @@ return funcs;
             for(let n in src) obj[n] = src[n];
         }
         return obj;
-    }
-
-    let lastRegx :RegExp = /^-\d+$/;
-
-    export function replace(text:string,data:object){
-
-    }
-    let templateVar
-    function makeTemplate(text:string){
-
     }
     
     /**
@@ -395,7 +233,7 @@ return funcs;
     export function merge(dest:any,src:any,prop?:string,refs?:Array<any>){
         if(prop===undefined){
             if(dest===src) return dest;
-            for(let n in src) merge(dest,src,prop,[]);
+            for(let n in src) merge(dest,src,n,[]);
             return dest;
         }
         let srcValue = src[prop];
@@ -422,16 +260,19 @@ return funcs;
             if(typeof destValue!=='object'|| destValue instanceof RegExp) destValue = isSrcValueArray?[]:{};
         }else target = destValue;
         refs.push({src:srcValue,target:target});
-        merge(target,srcValue);
-        return dest[prop] = target;
-
+        if(!target){
+            return dest[prop] = deepClone(srcValue);
+        }else{
+            merge(target,srcValue);
+            return dest[prop] = target;
+        }
     }
 
     export function deepClone(obj:any):any{
         if(!obj) return obj;
         let type = typeof obj;
         if(type==="object"){
-            let result = isArray(obj)?[]:{};
+            let result = is_array(obj)?[]:{};
             for(let n in obj){
                 result[n] = deepClone(obj[n]);
             }
@@ -572,15 +413,15 @@ return funcs;
 
     export function replaceClass(element:HTMLElement,addedCss:string,removeCss?:string){
         let clsText = element.className||"";
-        let clsNames = clsText.split(/\s+/g);
+        let clsNames = ((element.classList as any) as string[]) || clsText.split(/\s+/g);
+        let cs :string[]= [];
         for(let i =0,j= clsNames.length;i<j;i++){
-            let clsn = clsNames.shift();
-            if(clsn==="") continue;
-            if(clsn===removeCss){ clsNames.push(addedCss);addedCss = null; continue;}
-            clsNames.push(clsn);
+            let clsn = clsNames[i];
+            if(clsn==="" || clsn===addedCss || clsn===removeCss) continue;
+            cs.push(clsn);
         }
-        if(addedCss) clsNames.push(addedCss);
-        element.className = clsNames.join(" ");
+        cs.push(addedCss);
+        element.className = cs.join(" ");
     }
     export function isInview(element:HTMLElement):boolean{
         let doc = element.ownerDocument;
@@ -618,10 +459,10 @@ return funcs;
     }
 
     export enum ViewTypes{
-        detail,
-        edit,
-        list,
-        query
+        Detail,
+        Edit,
+        List,
+        Query
     }
 
     export enum QueryTypes{
@@ -692,13 +533,11 @@ return funcs;
          * @type {string}
          * @memberof IField
          */
-        remark?:string;
-
-        
+        remark?:string; 
 
         validations?:{[name:string]:any};
 
-        perm?:Permissions|string;
+        permission?:Permissions|string;
 
         queryable?:QueryTypes|string;
 
@@ -713,13 +552,13 @@ return funcs;
         items?:any;
     }
 
-    interface IInternalFieldsetOpts{
+    export interface IInternalFieldsetOpts{
         name:string;
         fields:Field[];
         viewType:ViewTypes;
-
+        url:string;
         dpath:DPath;
-        filter_dpath:DPath;
+        filter_dpath:DPath; 
         rows_dpath:DPath;
         total_dpath:DPath;
         pageIndex_dpath:DPath;
@@ -732,18 +571,20 @@ return funcs;
 
         viewType?:ViewTypes|string;
 
+        url?:string;
         dpath?:string;
         rows_bas_dpath?:string;
         filter_bas_dpath?:string;
         pageSize_dpath?:string;
         pageIndex_dpath?:string;
     }
-
+ 
     export class Fieldset{
         opts:IFieldsetOpts;
-        _viewOpts:{[name:string]:IInternalFieldsetOpts}
+        private _viewOpts:{[name:string]:IInternalFieldsetOpts}
         constructor(opts:IFieldsetOpts){
-
+            this._viewOpts={};
+            this.opts = opts;
         }
         createView(name?:any,initData?:any,perms?:{[fname:string]:string}) :FieldsetView{
             if(typeof name!=="string"){
@@ -764,7 +605,9 @@ return funcs;
                 let fields = makeFields(this.opts.fields as IFieldOpts[],fsOpts.fields);
                 viewOpts = extend({},fsOpts);
                 viewOpts.fields = fields;
+                
                 if(typeof fsOpts.viewType==="string") viewOpts.viewType = ViewTypes[fsOpts.viewType];
+                if(viewOpts.viewType===undefined) throw new Error("请指定viewType");
                 
                 viewOpts.dpath = DPath.fetch((viewOpts.dpath as any)||"");
                 if(viewOpts.filter_dpath)viewOpts.filter_dpath = DPath.fetch(viewOpts.filter_dpath as any);
@@ -788,8 +631,10 @@ return funcs;
             }
         }else {
             let fieldOpts:IFieldOpts[];
-            if(!isArray(viewFieldOpts)){
+            let needClone = true;
+            if(!is_array(viewFieldOpts)){
                 fieldOpts = [];
+                needClone = false;
                 for(let fname in viewFieldOpts){
                     let fvalue = viewFieldOpts[fname];
                     let fOpts :IFieldOpts;
@@ -797,7 +642,7 @@ return funcs;
                         if(Permissions[fvalue]!==undefined){
                             fOpts ={
                                 name:fname,
-                                perm:fvalue
+                                permission:fvalue
                             };
                         }
                     }else {
@@ -809,7 +654,7 @@ return funcs;
             }else fieldOpts = viewFieldOpts;
 
             for(let i=0,j=fieldOpts.length;i<j;i++){
-                let fieldOpt = deepClone(fieldOpts[i]);
+                let fieldOpt = needClone ? fieldOpts[i] : deepClone(fieldOpts[i]);
                 for(let j=0,k=entityFieldOpts.length;j<k;j++){
                     let eFOpts = entityFieldOpts[j];
                     if(eFOpts.name===fieldOpt.name){
@@ -824,8 +669,10 @@ return funcs;
         return rs;
     }
 
+
+
     export class FieldsetView{
-        opts:IInternalFieldsetOpts;
+        private opts:IInternalFieldsetOpts;
         viewType:ViewTypes;
         columns:Field[];
         
@@ -840,17 +687,13 @@ return funcs;
         element :HTMLElement;
         views:{[name:string]:FieldView};
         rows:Array<{[name:string]:FieldView}>;
-
-        
-
+        groups:{[name:string]:IGroup};
 
         constructor(opts:IInternalFieldsetOpts,initData:any,perms:{[fname:string]:string}){
             this.permissions = perms||{};
             this.opts = opts;
             this.data = merge({},initData);
             this.viewType = opts.viewType;
-
-            
         }
 
         render(wrapper?:HTMLElement):HTMLElement{
@@ -860,12 +703,23 @@ return funcs;
             else wrapper.innerHTML = "";
             
             switch(this.viewType){
-                case ViewTypes.detail:this._renderExpandFields(wrapper,ViewTypes.detail);break;
-                case ViewTypes.edit:this._renderExpandFields(wrapper, ViewTypes.edit);break;
-                case ViewTypes.query:this._renderQuery(wrapper);break;
+                case ViewTypes.Detail:this._renderExpandFields(wrapper,ViewTypes.Detail);break;
+                case ViewTypes.Edit:this._renderExpandFields(wrapper, ViewTypes.Edit);break;
+                case ViewTypes.Query:this._renderQuery(wrapper);break;
             }
 
             return wrapper;
+        }
+
+        validate(isCheckRequired?:boolean):{[name:string]:ValidateMessage}{
+            let rs = {};
+            let count = 0;
+            for(let n in this.views){
+                let fv = this.views[n];
+                let vs = fv.validate(isCheckRequired);
+                if(vs) {rs[fv.field.name] = vs;count++;}
+            }
+            return count?rs:null;
         }
 
         _renderExpandFields(wrapper:HTMLElement,viewType:ViewTypes):HTMLElement{
@@ -875,37 +729,44 @@ return funcs;
             let data = this.data;
             
             let groups:{[name:string]:IGroup} = {};
-            let dftGroup;
+            let groupCount = 0;
+            let btns :HTMLElement[]=[];
             
             for(let i =0,j=fields.length;i<j;i++){
                 let field = fields[i];
                 let perm = Permissions[perms[field.name]];
                 if(perm===undefined) perm = field.permission;
                 if(perm===Permissions.Denied) continue;
+                if(!this.views) this.views={};
                 let fview :FieldView = this.views[field.name] = new FieldView(field,this,data);
+                if(fview.field.type=="button" || fview.field.type=="submit"){
+                    btns.push(fview.button(fview.field.type));
+                    continue;
+                }
+                
 
-                let groupName = field.opts.group;
+                let groupName = field.opts.group||"";
                 let group = groups[groupName];
                 
                 if(!group){
-                    group = groups[groupName] = makeGroup(groupName,this);
-                    if(!groupName) dftGroup = group;
-                    else if(!dftGroup) dftGroup = group;
+                    group =  makeGroup(groupName,this);
+                    groups[groupName] =group;
                     if(!group.views) group.views = {};
                     group.content.innerHTML = "";
-                    wrapper.appendChild(group.element);
+                    //wrapper.appendChild(group.element);
+                    groupCount++;
                 }
                 this.views[field.name]=group.views[field.name] = fview;
                 fview.group = group;
                 let fieldElement :HTMLElement;
                 
                 switch(viewType){
-                    case ViewTypes.detail:fieldElement = fview.detail();break;
-                    case ViewTypes.edit:
+                    case ViewTypes.Detail:fieldElement = fview.detail();break;
+                    case ViewTypes.Edit:
                         if(perm === Permissions.Readonly) fieldElement = fview.detail();
                         else fieldElement = fview.edit();
                         break;
-                    case ViewTypes.query:
+                    case ViewTypes.Query:
                             fieldElement = fview.filter();
                         break;
                     default:throw new Error("错误的调用");
@@ -913,6 +774,61 @@ return funcs;
                 if(perm==Permissions.Hidden) fieldElement.style.display = "none";
                 group.content.appendChild(fieldElement);
             }
+
+            let form = YA.createElement("form") as HTMLFormElement;
+            form.action=this.opts.url || "";
+
+            if(viewType===ViewTypes.Query) form.method="get";
+            else form.method= "post";
+            form.onsubmit = (e)=>{
+                e ||(e=event);
+                if((form as any).__validated)return;
+
+                let rs = this.validate(viewType!==ViewTypes.Query);
+                
+                if(rs){
+                    let msgs ="<div>";
+                    for(let n in rs) msgs += rs[n].toString(true);
+                    msgs += "</div>";
+                    messageBox(msgs);
+                }else {
+                    ajax({
+                        url:this.opts.url
+                        ,nocache:true
+                        ,data:this.data
+                    });
+                }
+                
+                e.cancelBubble =true;
+                e.returnValue=false;
+                if(e.preventDefault) e.preventDefault();
+                if(e.stopPropagation)e.stopPropagation();
+                return false;
+            };
+
+            if(groupCount){
+                if(groupCount==1){
+                    for(let n in groups){
+                        form.appendChild(groups[n].content);
+                    }
+                }else{
+                    for(let n in groups){
+                        form.appendChild(groups[n].element);
+                    }
+                }
+            }else {
+                this.groups=null;
+            }
+
+            if(btns.length){
+                let btnDiv = YA.createElement("span");
+                btnDiv.className = "btns";
+                for(let i = 0,j=btns.length;i<j;i++){
+                    btnDiv.appendChild(btns[i]);
+                }
+                form.appendChild(btnDiv);
+            }
+            wrapper.appendChild(form);
             return wrapper;
         }
 
@@ -920,7 +836,7 @@ return funcs;
             if(!wrapper) wrapper = YA.createElement("div");
             let form = YA.createElement("form");
             form.className = "filter";
-            let filter = this._renderExpandFields(form,ViewTypes.query);
+            let filter = this._renderExpandFields(form,ViewTypes.Query);
             form.appendChild(filter);
             wrapper.appendChild(form);
             wrapper.appendChild(this._renderTable());
@@ -1071,6 +987,7 @@ return funcs;
         let legend = YA.createElement("legend") as HTMLLegendElement;
         legend.innerHTML = fsView.TEXT(groupName);
         let content = YA.createElement("div") as HTMLDivElement;
+        content.className= "group-content";
         gp.appendChild(legend);gp.appendChild(content);
         return {
             name:groupName
@@ -1096,7 +1013,7 @@ return funcs;
         group:string;
         queryable:QueryTypes;
 
-        componentMaker:(field:Field,initValue:any,editable:boolean)=>IFieldComponent;
+        componentMaker:(field:FieldView,initValue:any,editable:boolean)=>IFieldComponent;
         //dataViewCreator:(field:Field,fieldView:FieldView)=>IFieldViewAccessor;
     
         constructor(fieldOpts:IFieldOpts,fieldset?:Fieldset){
@@ -1116,16 +1033,12 @@ return funcs;
             this.required = this.validations.required;
             this.className = "field " + this.type + " " + this.name;
             this.dpath = DPath.fetch(fieldOpts.dpath || this.name);
-            this.permission = typeof fieldOpts.perm==="string"?Permissions[fieldOpts.perm]:fieldOpts.perm;
+            this.permission = typeof fieldOpts.permission==="string"?Permissions[fieldOpts.permission]:fieldOpts.permission;
             this.componentMaker = fieldComponents[this.type] || fieldComponents["text"];
+
+            if(this.type==="button" || this.type=="submit") this.validate =(value:any,lng:any,isc:boolean)=>undefined;
             
         }
-
-        
-
-        
-        
-
         
         validate(value:any,lng:(txt:string)=>string,isCheckRequired:boolean):string{
             let validRs:string;
@@ -1153,6 +1066,25 @@ return funcs;
         element:HTMLElement;
         getViewValue:()=>any;
         setViewValue:(value:any)=>any;
+    }
+
+    export class ValidateMessage{
+        clientId:string;
+        name:string;
+        label:string;
+        message:string;
+        constructor(clientId:string,name:string,label:string,message){
+            this.name = name;
+            this.clientId = clientId;
+            this.label= label;
+            this.message = message;
+        }
+        toString(html?:boolean):string{
+            if(!html) return this.message;
+            let str = `<div><label for="${this.clientId}">${this.label}</label><span>${this.message}</span></div>`;
+            return str;
+        }
+
     }
 
     let requiredValidator = (value,opts,lng:(txt:string)=>string):string=>{
@@ -1207,7 +1139,7 @@ return funcs;
             setViewValue = (val:any)=>{(elem as HTMLInputElement).value= val===undefined ||val===null?"":val;}
             let tick:number;
             let onblur = () => {
-                field.setValue((elem as HTMLInputElement).value,true);
+                field.setValue((elem as HTMLInputElement).value,"fromEvent");
             };
             let onhit = ()=>{
                 if(tick){clearTimeout(tick);}
@@ -1235,6 +1167,7 @@ return funcs;
         field:Field;
         fieldsetView:FieldsetView;
         data:any;
+        inputClientId:string;
         element:HTMLElement;
         getViewValue:()=>any;
         setViewValue:(val:any)=>any;
@@ -1246,12 +1179,28 @@ return funcs;
             this.data = data;
         }
 
-        setValue(val:any,fromEvent?:boolean){
+        setValue(val:any,arg?:string){
             this.field.dpath.setValue(this.data,val);
-            if(!fromEvent){
+            if(arg==="fromEvent"){
                 this.setViewValue(val);
             }
+            this.validate(arg!=="notCheckRequired");
         }
+
+        button(type:string){
+            let wrapper = this.element as HTMLButtonElement;
+            let field = this.field;
+            if(wrapper)wrapper.innerHTML = wrapper.value="";
+            wrapper = this.element = YA.createElement("button") as HTMLButtonElement;
+            wrapper.type=type;
+            wrapper.innerHTML = wrapper.value = this.fieldsetView.TEXT(this.field.label || this.field.name);
+            this.setViewValue = (value)=> wrapper.innerHTML = wrapper.value = value;
+            this.getViewValue = ()=> wrapper.value;
+            this.validate = (isCheckRequired:boolean)=>undefined;
+            return wrapper;
+        }
+
+        
 
         detail(){
             return this._detailOrEdit(false,false);
@@ -1273,7 +1222,7 @@ return funcs;
             let fieldWrapper = YA.createElement("div");
             fieldWrapper.className = field.className;
 
-            let inputComp = field.componentMaker(field,field.dpath.getValue(this.data),false);
+            let inputComp = field.componentMaker(this,field.dpath.getValue(this.data),false);
             inputComp.element.className = "field-input";
             fieldWrapper.appendChild(inputComp.element);
             this.getViewValue = inputComp.getViewValue;
@@ -1281,23 +1230,34 @@ return funcs;
             return wrapper;
         }
 
-        _detailOrEdit(editable:boolean,requireStar:boolean){
-            let wrapper = this.element;
-            let field = this.field;
-            if(wrapper)wrapper.innerHTML="";
-            wrapper = this.element = YA.createElement("div");
+        validate(isCheckRequired:boolean):ValidateMessage{
+            let value = this.getViewValue();
+            let result = this.field.validate(value,(t)=>this.fieldsetView.TEXT(t),isCheckRequired);
+            if(result){
+                replaceClass(this.element,"validate-error","validate-success");
+                return new ValidateMessage(this.inputClientId,this.field.name,this.fieldsetView.TEXT(this.field.label|| this.field.name),result);
+            }else {
+                replaceClass(this.element,"validate-success","validate-error");
+            }
+            //return result;
+        }
 
-            let fieldWrapper = YA.createElement("div");
+        _detailOrEdit(editable:boolean,requireStar:boolean){
+            let fieldWrapper = this.element;
+            let field = this.field;
+            if(fieldWrapper)fieldWrapper.innerHTML="";
+            fieldWrapper = this.element = YA.createElement("div");
+
             fieldWrapper.className = field.className;
             fieldWrapper.appendChild(this._label(field,requireStar));
 
-            let inputComp = field.componentMaker(field,field.dpath.getValue(this.data),editable);
+            let inputComp = field.componentMaker(this,field.dpath.getValue(this.data),editable);
             inputComp.element.className = "field-input";
             fieldWrapper.appendChild(inputComp.element);
             this.getViewValue = inputComp.getViewValue;
             this.setViewValue = inputComp.setViewValue;
             if(field.opts.remark)fieldWrapper.appendChild(this._remark(field));
-            return wrapper;
+            return fieldWrapper;
         }
 
 
@@ -1323,5 +1283,12 @@ return funcs;
         }
         
 
+    }
+
+    function messageBox(msg):IThenable<any>{
+        return new Awaitor((ok,fail)=>{
+            alert(msg);
+            ok(true);
+        });
     }
 }
