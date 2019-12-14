@@ -7,7 +7,79 @@ declare namespace YA {
         constructor(message: string, internalError?: any, extra?: any);
     }
     function is_array(obj: any): boolean;
+    /**
+     * 管道
+     *
+     * @export
+     * @class Pipe
+     */
+    class Pipe {
+        private _pipes;
+        constructor();
+        pipe(args: any[] | Function, command?: Function): Pipe;
+        removePipe(args: any[] | Function, command?: Function): this;
+        execute(input: any, self?: any): any;
+        bind(first: Function): Function;
+    }
+    /**
+     * 拦截器/装饰器
+     *
+     * @export
+     * @class Interceptor
+     */
+    class Interceptor {
+        raw: Function;
+        func: Function;
+        private _next;
+        constructor(method?: Function);
+        intercept(interceptor: Function): Interceptor;
+        execute(me: any, args: any[]): any;
+    }
     function interceptable(): (target: any, propertyKey: string, descriptor: PropertyDescriptor) => void;
+    interface IObservable {
+        subscribe(listener: Function): IObservable;
+        unsubscribe(listener?: Function): IObservable;
+        publish(...args: any[]): IObservable;
+    }
+    /**
+     * 发布/订阅
+     *
+     * @export
+     * @class Observable
+     * @implements {IObservable}
+     */
+    class Observable implements IObservable {
+        subscribe: (listener: Function) => IObservable;
+        unsubscribe: (listener?: Function) => IObservable;
+        publish: (...args: any[]) => IObservable;
+        constructor(target?: object);
+    }
+    interface IEventable {
+        attachEvent(eventId: string, listener: Function, extras?: any): IEventable;
+        detechEvent(eventId: string, listener: any, Function: any, extras?: any): any;
+        dispachEvent(eventId: string, evtArg: any, extras?: any): any;
+    }
+    interface IEventArgs {
+        eventId?: string;
+        extras?: any;
+        sender?: IEventable;
+    }
+    /**
+     * 事件
+     *
+     * @export
+     * @class Eventable
+     * @implements {IEventable}
+     */
+    class Eventable implements IEventable {
+        attachEvent: (eventId: string, listener: (evtArgs: IEventArgs) => any, extras?: any) => IEventable;
+        detechEvent: (eventId: string, listener: (evtArgs: IEventArgs) => any, extras?: any) => IEventable;
+        dispachEvent: (eventId: string, evtArg: IEventArgs, extras?: any) => IEventable;
+        constructor(target?: object);
+    }
+    class Proxy {
+        constructor(target: object, methods?: string[], proxy?: any);
+    }
     interface IThenable<T> {
         then(onfullfilled?: (value: T) => void, onReject?: (value: any) => void): IThenable<T>;
     }
@@ -74,8 +146,8 @@ declare namespace YA {
         dpaths: any[];
         text: string;
         constructor(template: string);
-        replace(data: any): string;
-        static replace(template: string, data?: any): string;
+        replace(data: any, convertor?: (input: string) => string): string;
+        static replace(template: string, data?: any, convertor?: (t: string) => string): string;
         static caches: {
             [key: string]: StringTemplate;
         };
@@ -247,7 +319,6 @@ declare namespace YA {
         constructor(opts: IResourceOpts);
         protected _doLoad(okCallback: any, errCallback: any): HTMLLinkElement;
     }
-    function makeUrl(url: string): string;
     interface IDefineParams {
         dependences?: string[];
         defination?: Function;
@@ -310,4 +381,74 @@ declare namespace YA {
     function define(depNames: string | string[] | Function, definer: Function | any): void;
     function require(depNames: string[] | string): ICompletable;
     function resolveUrl(url: string, data?: any): any;
+    interface IAjaxOpts {
+        method?: string;
+        url: string;
+        data?: any;
+        type?: string;
+        dataType?: string;
+        cache?: boolean;
+        sync?: boolean;
+        headers?: {
+            [name: string]: string;
+        };
+    }
+    interface IAjaxInterceptors {
+        request: Interceptor;
+        response: Interceptor;
+    }
+    class AjaxException extends Exception {
+        status: number;
+        statusText: string;
+        instance: Ajax<any>;
+        constructor(instance: Ajax<any>);
+    }
+    class Ajax<T> extends Awaitor<T> {
+        opts: IAjaxOpts;
+        url: string;
+        method: string;
+        data: any;
+        http: XMLHttpRequest;
+        requestHeaders: {
+            [name: string]: string;
+        };
+        constructor(opts: IAjaxOpts);
+        private _init_http(opts, resolve, reject);
+        private _init_http_event(http, opts, resolve, reject);
+        private _init_sendData(opts, sendDataType, method);
+        private _init_headers(headers, http, type, method);
+        static interceptors: IAjaxInterceptors;
+    }
+    enum ModelChangeTypes {
+        value = 0,
+        add = 1,
+        remove = 2,
+    }
+    interface IModelChangeEventArgs {
+        value: any;
+        index: number;
+        changeType: ModelChangeTypes;
+        sender: Model;
+    }
+    class Model extends Observable {
+        target: object;
+        name: string | number;
+        superior: Model;
+        members: {
+            [name: string]: Model;
+        };
+        item_model: Model;
+        constructor(name: string | number, target?: object, superior?: Model);
+        value(): any;
+        defineProp(propname: string): Model;
+        asArray(): Model;
+        update(value: any): Model;
+        clone(target?: object): Model;
+        updateValue(value: any): Model;
+        updateObject(value: any): Model;
+        updateArray(value: any): Model;
+    }
+    class View {
+        constructor(elem: HTMLElement);
+    }
 }

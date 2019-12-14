@@ -8,12 +8,6 @@ declare namespace YA {
     let numberRegx: RegExp;
     let percentRegx: RegExp;
     let quoteRegx: RegExp;
-    interface IAjaxOpts {
-        method?: string;
-        url?: string;
-        data?: string;
-        nocache?: boolean;
-    }
     function ajax<T>(opts: IAjaxOpts): IThenable<T>;
     /**
      * 去掉字符串两边的空白
@@ -114,21 +108,6 @@ declare namespace YA {
         raw: IEventHandler;
         capture: object;
     }
-    interface IObservable {
-        subscribe(event: string, handler: IEventHandler, capture?: boolean): IObservable;
-        unsubscribe(event: string, handler: IEventHandler, capture?: boolean): IObservable;
-        notify(event: string, args: IEventArgs): IObservable;
-        get_eventHandlers(event: string, addIfNone?: boolean): IFuncs;
-    }
-    class Observable implements IObservable {
-        private _eventMaps;
-        constructor(injectTaget?: Function | object);
-        subscribe(event: string, handler: IEventHandler, capture?: boolean): IObservable;
-        unsubscribe(event: string, handler: IEventHandler, capture?: boolean): IObservable;
-        notify(event: string, args: IEventArgs): IObservable;
-        get_eventHandlers(event: string, addIfNone?: boolean): IFuncs;
-    }
-    function createElement(tagName: string): HTMLElement;
     let getStyle: (obj: HTMLElement, attr: string) => string;
     let attach: (elem: HTMLElement, event: string, handler: Function) => any;
     let detech: (elem: HTMLElement, event: string, handler: Function) => any;
@@ -296,10 +275,10 @@ declare namespace YA {
         };
         _renderExpandFields(wrapper: HTMLElement, viewType: ViewTypes): HTMLElement;
         _renderQuery(wrapper?: HTMLElement): HTMLElement;
-        _renderTable(): HTMLElement;
+        _renderTable(): any;
         _renderHead(): HTMLElement;
         _renderBody(): HTMLElement;
-        _renderFoot(): HTMLElement;
+        _renderFoot(): any;
         TEXT(text: string): string;
     }
     interface IGroup {

@@ -6,10 +6,7 @@ namespace YA{
 
     
 
-    //if(!Object.defineProperty) Object.defineProperty=(o,n,d)=>o[n]=d?d.value:undefined;
-    let defPropsValue =(obj:object,propNames:string[],desc:PropertyDescriptor):void=>{
-        for(const i in propNames) Object.defineProperty(obj,propNames[i],desc);
-    };
+   
     export class Exception extends Error{
         internal_error:Error;
         extra:any;
@@ -35,38 +32,264 @@ namespace YA{
         return Object.prototype.toString.call(obj)==="[object Array]";
     }
 
-    
 
+    // s | toJson
+    //this == input, return = output 
+    //new Pipeline().pipe(function(){}).pipe().attatch
+    interface IPipeItem{
+        command:Function;
+        args:any[];
+    }
+
+    /**
+     * 管道
+     *
+     * @export
+     * @class Pipe
+     */
+    export class Pipe{
+        private _pipes:IPipeItem[];
+        constructor(){
+            if(arguments.length){
+                this._pipes = [];
+                for(let i =0,j=arguments.length;i<j;i++){
+                    this._pipes.push({
+                        command:arguments[i],args:null
+                    });
+                }
+            }
+        }
+        pipe(args:any[]|Function,command?:Function):Pipe{
+            if(typeof args ==="function"){
+                command =args as Function;
+                args = undefined;
+            }
+            (this._pipes||(this._pipes=[])).push({
+                command :command,
+                args:args as any[]
+            });
+            return this;
+        }
+        removePipe(args:any[]|Function,command?:Function){
+            if(typeof args ==="function"){
+                command =args as Function;
+                args = undefined;
+            }
+            let items = this._pipes;
+           
+            for(let i in items){
+                let item = items.shift();
+                if(item.command!==command || item.args!=args){
+                    items.push(item);
+                }
+            }
+            return this;
+        }
+        execute(input:any,self?:any):any{
+            let items = this._pipes;
+            self|| (self=this);
+            for(let i in items){
+                let item = items[i];
+                let args = item.args||[];
+                args.unshift(input);
+                input = item.command.apply(self,args);
+                args.shift();
+            }
+            return input;
+        }
+        bind(first:Function):Function{
+            let me = this;
+            let result:any= function(){
+                return me.execute(first.apply(this,arguments),this);
+            }
+            result.$pipe = this;
+            return result;
+        }
+    }
+
+    /**
+     * 拦截器/装饰器
+     *
+     * @export
+     * @class Interceptor
+     */
+    export class Interceptor{
+        raw:Function;
+        func:Function;
+        private _next:(args:any[])=>any;
+        constructor(method?:Function){
+            
+            if(method && typeof method !=='function') throw new Exception("拦截器必须应用于函数");
+            this.raw = method;
+            let me = this;
+            let first = this._next = method?function(args:any[]){
+                method.apply(this,args);
+            }:function(){};
+            
+            let result:any= function(...args:any[]){
+                if(me._next===first) {
+                    return method.apply(this,arguments);
+                }else{
+                    return me._next.call(this,args);
+                }
+                //return me.next===first?method.apply():me._next.call(this,args);
+            };
+            result.intercept =function(interceptor:Function){
+                me.intercept(interceptor);
+                return this;
+            };
+            result.$interceptor = this;
+            this.func = result;
+        }
+        intercept(interceptor:Function):Interceptor{
+            let inner = this._next;
+            this._next = function(args:any[]){ 
+                args.unshift(inner);
+                return interceptor.apply(this,args);
+            }
+            return this;
+        }
+        execute(me:any,args:any[]){
+            return this.func.apply(me,args);
+        }
+        
+
+    }
+    
     export function interceptable() {
         return function (target: any, propertyKey: string, descriptor: PropertyDescriptor) {
-            let method:any = descriptor.value;
-
-            if(typeof method!=='function') throw new Exception("interceptable 只可用于方法");
-            descriptor.configurable=false;
-            descriptor.enumerable=false;
-            
-            let intercept = function(interceptor:Function):Function{
-                let mymethod = this;
-                let wrapMethod:any = target[propertyKey] = function(...args:any[]){
-                    args.unshift(mymethod);
-                    return interceptor.apply(this,args);
-                };
-                wrapMethod.intercept = intercept;
-
-                return wrapMethod;
-            }
-            method.intercept = intercept;
+            descriptor.value = new Interceptor(descriptor.value);
         };
     }
-    let makeIntercept = interceptable();
+
+    export interface IObservable{
+        subscribe(listener:Function):IObservable;
+        unsubscribe(listener?:Function):IObservable;
+        publish(...args:any[]):IObservable;
+    }
+
+
+    /**
+     * 发布/订阅
+     *
+     * @export
+     * @class Observable
+     * @implements {IObservable}
+     */
+    export class Observable implements IObservable{
+        $subscribers:Function[];
+        subscribe(observer:Function):IObservable{
+            (this.$subscribers||(this.$subscribers=[])).push(observer);
+            return this;
+        }
+        unsubscribe(observer?:Function):IObservable{
+            if(!this.$subscribers) return this;
+            for(let i =0,j=this.$subscribers.length;i<j;i++){
+                let existed = this.$subscribers.shift();
+                if(observer===existed) continue;
+                this.$subscribers.push(existed);
+            }
+            return this;
+        }
+        publish(...args:any[]):IObservable{
+            if(!this.$subscribers) return this;
+            for(let i =0,j=this.$subscribers.length;i<j;i++){
+                let existed = this.$subscribers[i];
+                existed.apply(this,arguments);
+            }
+            return this;
+        }
+        constructor(target?:any){
+            if(target){
+                target.subscribe = this.subscribe;
+                target.unsubscribe = this.unsubscribe;
+                target.publish = this.publish;
+            }
+        }
+    }
+    export interface IEventable{
+        attachEvent(eventId:string,listener:Function,extras?:any):IEventable;
+        detechEvent(eventId:string,listener,Function,extras?:any);
+        dispachEvent(eventId:string,evtArg:any,extras?:any);
+    }
     
+    export interface IEventArgs{
+        eventId?:string;
+        extras?:any;
+        sender?:IEventable;
+    }
+    interface EventListener{
+        listener:(evtArgs:IEventArgs)=>any;
+        extras?:any;
+    }
+
+    /**
+     * 事件
+     *
+     * @export
+     * @class Eventable
+     * @implements {IEventable}
+     */
+    export class Eventable implements IEventable{
+        protected _events:{[eventId:string]:EventListener[]};
+        attachEvent(eventId:string,listener:(evtArgs:IEventArgs)=>any,extras?:any):IEventable{
+            let events = this._events ||(this._events={});
+            let listeners = events[eventId]||(events[eventId]=[]);
+            listeners.push({ listener:listener,extras:extras});
+            return this;
+        }
+        detechEvent(eventId:string,listener:(evtArgs:IEventArgs)=>any,extras?:any):IEventable{
+            let events = this._events;if(!events)return this;
+            let listeners = events[eventId];if(!listeners) return this;
+            for(let i =0,j=listeners.length;i<j;i++){
+                let existed = listeners.shift();
+                if(existed.listener===listener && existed.extras===extras) continue;
+                listeners.push(existed);
+            }
+            if(listeners.length==0) delete events[eventId];
+            return this;
+        }
+        dispachEvent(eventId:string,evtArgs:IEventArgs,extras?:any):IEventable{
+            let events = this._events;if(!events)return this;
+            let listeners = events[eventId];if(!listeners) return this;
+            evtArgs||(evtArgs={});
+            evtArgs.eventId=eventId;
+            evtArgs.sender = this;
+            for(let i =0,j=listeners.length;i<j;i++){
+                let existed = listeners[i];
+                if(existed.extras===extras)existed.listener(evtArgs);
+            }
+            return this;
+        }
+
+        constructor(target?:any){
+           if(target){
+               target.attachEvent = this.attachEvent;
+               target.detechEvent = this.detechEvent;
+               target.dispachEvent = this.dispachEvent;
+           } 
+        }
+    }
     
-    (Function.prototype as any).intercept = function(interceptor){
-        let  method = this;
-        return function(...args:any[]){
-            args.unshift(method);
-            return interceptor.apply(this,args);
-        };
+    export class Proxy{
+        constructor(target:object,methods?:string[],proxy?:any){
+            proxy ||(proxy===this);
+            let makeProxyMethod = (name)=>{
+                let method = target[name];
+                if(typeof method!=='function') return;
+                proxy[name]=function(){return method.apply(target,arguments);}
+            };
+            if(methods){
+                for(let i in methods){
+                    makeProxyMethod(methods[i]);
+                }
+            }else{
+                for(let n in target){
+                    makeProxyMethod(n);
+                }
+            }
+        }
+
     }
 
     
@@ -471,16 +694,22 @@ namespace YA{
             let text = template.substring(lastAt);
             if(text)this.dpaths.push(text);
         }
-        replace(data:any){
+        replace(data:any,convertor?:(input:string)=>string){
             let rs ="";
             for(let i in this.dpaths){
                 let dp = this.dpaths[i];
-                if(dp.getValue) rs += dp.getValue(data);
+                if(dp.getValue){
+                    let val= dp.getValue(data);
+                    if(convertor) val = convertor(val);
+                    if(val!==null && val!==undefined){
+                        rs += val;
+                    }
+                } 
                 else rs += dp;
             }
             return rs;
         }
-        static replace(template:string,data?:any){
+        static replace(template:string,data?:any,convertor?:(t:string)=>string){
             let tmpl = StringTemplate.caches[template]||(StringTemplate.caches[template]=new StringTemplate(template));
             return tmpl.replace(data);
         }
@@ -796,10 +1025,7 @@ namespace YA{
         }
     }
 
-    export function makeUrl(url:string):string{
-        return url;
-    }
-    
+        
 
     
 
@@ -1014,7 +1240,7 @@ namespace YA{
     let urlResolveRules :{[name:string]:IResolveRule}={};
 
     export function resolveUrl(url:string,data?:any):any{
-        url = data?StringTemplate.replace(url,data):url;
+        url = data?StringTemplate.replace(url,data,(t)=>encodeURIComponent(t)):url;
         for(let name in urlResolveRules){
             let rule = urlResolveRules[name];
             let newUrl = url.replace(rule.partten,rule.replacement);
@@ -1035,4 +1261,617 @@ namespace YA{
             urlResolveRules[name]=rule;
         }
     }
+
+    export interface IAjaxOpts{
+        method?:string;
+        url:string;
+        data?:any;
+        type?:string;
+        dataType?:string;
+        cache?:boolean;
+        sync?:boolean;
+        headers?:{[name:string]:string};
+    }
+    export interface IAjaxInterceptors{
+        request:Interceptor;
+        response:Interceptor;
+    };
+    export class AjaxException extends Exception{
+        status:number;
+        statusText:string;
+        instance:Ajax<any>;
+        constructor(instance:Ajax<any>){
+            super(instance.http.statusText);
+            this.instance= instance;
+            this.status = instance.http.status;
+            this.statusText = instance.http.statusText;
+            this.message = `网络请求或服务器异常(${this.status})`;
+        }
+    }
+    export class Ajax<T> extends Awaitor<T>{
+        opts:IAjaxOpts;
+        url:string;
+        method:string;
+        data:any;
+        http:XMLHttpRequest;
+        
+        requestHeaders:{[name:string]:string};
+        constructor(opts:IAjaxOpts){
+            super((resolve:(value:any)=>void,reject:(error:any)=>void)=>{
+                let http = this._init_http(opts,resolve,reject);
+            
+                let sendDataType =typeof opts.data;
+                
+                let method = this.method = (opts.method || "GET").toUpperCase(); 
+                let sendData = this._init_sendData(opts,sendDataType,method);
+
+                let url = resolveUrl(opts.url,sendDataType=="object"?opts.data:undefined);
+                let hasQuest = (url.indexOf("?")>=0) ;
+                if(method!=="POST" && method!=="PUT"){
+                    if(sendData){
+                        if(hasQuest) url += "&" +sendData;
+                        else{ url += "?"+sendData;hasQuest=true;}
+                    }
+                    
+                    if(!opts.cache){
+                        if(hasQuest) url += "&_"+Math.random();
+                        else url += "?_"+Math.random();
+                    }
+                    this.data=null;
+                }else {
+                    this.data = sendData;
+
+                }
+                this.url = url;
+
+                this.requestHeaders = opts.headers||{};
+                
+                Ajax.interceptors.request.execute(this,[http]);
+                http.open(this.method,this.url,true);  
+                
+                this._init_headers(this.requestHeaders,http,opts.type,method);
+                http.send(this.data);
+            });
+            this.opts= opts;
+        }
+        private _init_http(opts:IAjaxOpts,resolve:(value:any)=>void,reject:(error:any)=>void){
+            let http:XMLHttpRequest;
+            if((window as any).XMLHttpRequest)  //非IE
+                http = new XMLHttpRequest();
+            else {
+                let ActiveObject:any = (window as any).ActiveObject;
+                if(ActiveObject){
+                    http = new ActiveObject("Msxml2.XMLHTTP");
+                }else {
+                    http = new ActiveObject("Microsoft.XMLHTTP");
+                }
+            }
+            this._init_http_event(http,opts,resolve,reject);
+            return http;
+        }
+        private _init_http_event(http:XMLHttpRequest,opts:IAjaxOpts,resolve:(value:any)=>void,reject:(error:any)=>void){
+            if(http.onreadystatechange!==undefined){
+                http.onreadystatechange=()=>{
+                    if(http.readyState==4 || (http.readyState as any)=="complete"){
+                        Ajax.interceptors.response.execute(this,[resolve,reject]);
+                    }
+                };
+            }else {
+                http.onload = ()=>Ajax.interceptors.response.execute(this,[resolve,reject]);;
+            }
+            http.onerror=(ex)=>{
+                console.error(ex);
+                reject(ex);
+            }
+        }
+        private _init_sendData(opts:IAjaxOpts,sendDataType:string,method){
+            let sendData = opts.data;
+            if(sendData){
+                let sendDataNeedEncode=false;
+                if(method==="POST" || method==="PUT"){
+                    if(sendDataType==="object"){
+                        if(opts.type==="json"){
+                            sendData= JSON.stringify(sendData);
+                        }else{
+                            sendDataNeedEncode=true;
+                        }
+                    }
+                }else{sendDataNeedEncode=true;}
+                if(sendDataNeedEncode){
+                    let sendStr = "";
+                    for(let n in sendData){
+                        if(sendStr)sendStr += "&";
+                        sendStr += encodeURIComponent(n);
+                        sendStr += "=";
+                        let sendValue = sendData[n];
+                        if(sendValue!==null&& sendValue==undefined){
+                            sendStr += encodeURIComponent(sendValue);
+                        }
+                        
+                    }
+                    sendData = sendStr;
+                }
+            }
+            return sendData;
+        }
+        private _init_headers(headers:{[name:string]:string},http:XMLHttpRequest,type:string,method:string){
+            let contentType :string;
+            if(type==="json"){
+                contentType = "text/json";
+            }else if(type==="xml"){
+                contentType = "text/json";
+            }else if(method=="POST" || method=="PUT"){
+                contentType = "application/x-www-form-urlencode";
+            }
+            http.setRequestHeader("Content-Type",contentType);
+            if(headers){
+                for(let name in headers){
+                    http.setRequestHeader(name,headers[name]);        
+                }
+            }
+        }
+        
+
+        static interceptors:IAjaxInterceptors = {
+            request:new Interceptor(),
+            response:new Interceptor()
+        }
+    }
+    Ajax.interceptors.response.intercept(function(next,resolve:(value:any)=>void,reject:(err:any)=>void){
+        let me :Ajax<any> = this;
+        if(me.http.status!==200){
+            let ex:AjaxException = new AjaxException(me);
+            console.error(ex);
+            reject(ex);
+        }else{
+            next.call(this,[resolve,reject]);
+        }
+    });
+
+    Ajax.interceptors.response.intercept(function(next,resolve:(value:any)=>void,reject:(err:any)=>void){
+        let me :Ajax<any> = this;
+        let result :string;
+        try{
+            result= (this.http as XMLHttpRequest).responseText;
+        }catch(ex){
+            console.error(ex);
+            reject(ex);
+            return;
+        }
+        resolve(result);
+        return next.call(this,[resolve,reject]);
+    });
+    Ajax.interceptors.response.intercept(function(next,resolve:(value:any)=>void,reject:(err:any)=>void){
+        let me :Ajax<any> = this;
+        let opts = me.opts;
+        let result :any;
+        if(opts.dataType==="json"){
+            try{
+                result = JSON.parse((this.http as XMLHttpRequest).responseText);
+            }catch(ex){
+                console.error(ex);
+                reject(ex);
+                return;
+            }
+            resolve(result);
+            return;
+        };
+        return next.call(this,[resolve,reject]);
+    });
+    Ajax.interceptors.response.intercept(function(next,resolve:(value:any)=>void,reject:(err:any)=>void){
+        let me :Ajax<any> = this;
+        let opts = me.opts;
+        let result :any;
+        if(opts.dataType==="xml"){
+            try{
+                result = (this.http as XMLHttpRequest).responseXML;
+            }catch(ex){
+                console.error(ex);
+                reject(ex);
+                return;
+            }
+            resolve(result);
+            return;
+        };
+        return next.call(this,[resolve,reject]);
+    });
+
+    export function createElement(tag:string){
+        return document.createElement(tag);
+    }
+
+    let element_wrapper:HTMLElement = createElement("div");
+
+    export let attach:(elem:HTMLElement,eventId:string,listener:any)=>void;
+    export let detech:(elem:HTMLElement,eventId:string,listener:any)=>void;
+    if(element_wrapper.addEventListener){
+        attach = (elem:HTMLElement,eventId:string,listener:any):void=>elem.addEventListener(eventId,listener,false);
+        detech =  (elem:HTMLElement,eventId:string,listener:any):void=>elem.removeEventListener(eventId,listener,false);
+    }else if((element_wrapper as any).attachEvent){
+        attach = (elem:HTMLElement,eventId:string,listener:any):void=>(elem as any).attachEvent('on'+eventId,listener);
+        detech =  (elem:HTMLElement,eventId:string,listener:any):void=>(elem as any).detechEvent('on'+eventId,listener);
+    }
+    
+    let emptyStringRegx = /\s+/g;
+    function findClassAt(clsnames:string,cls:string):number{
+        let at = clsnames.indexOf(cls);
+        let len = cls.length;
+        while(at>=0){
+            if(at>0){
+                let prev = clsnames[at-1];
+                if(!emptyStringRegx.test(prev)){at = clsnames.indexOf(cls,at+len);continue;}
+            }
+            if((at+len)!==clsnames.length){
+                let next = clsnames[at+length];
+                if(!emptyStringRegx.test(next)){at = clsnames.indexOf(cls,at+len);continue;}
+            }
+            return at;
+        }
+        return at;
+    }
+    export function hasClass(elem:HTMLElement,cls:string):boolean{
+        return findClassAt(elem.className,cls)>=0;
+    }
+    export function addClass(elem:HTMLElement,cls:string):boolean{
+        if(findClassAt(elem.className,cls)>=0) return false;
+        elem.className+= " " + cls;return true;
+    }
+    export function removeClass(elem:HTMLElement,cls:string):boolean{
+        let clsnames = elem.className;
+        let at = findClassAt(clsnames,cls);
+        if(at<=0) return false;
+        let prev = clsnames.substring(0,at);
+        let next =clsnames.substr(at+cls.length);
+        elem.className= prev.replace(/(\s+$)/g,"") +" "+ next.replace(/(^\s+)/g,"");
+        return true;
+    }
+    export function replaceClass(elem:HTMLElement,old_cls:string,new_cls:string,alwaysAdd?:boolean):boolean{
+        let clsnames = elem.className;
+        let at = findClassAt(clsnames,old_cls);
+        if(at<=0) {
+            if(alwaysAdd) elem.className = clsnames + " " + new_cls;
+            return false;
+        }
+        let prev = clsnames.substring(0,at);
+        let next =clsnames.substr(at+old_cls.length);
+        elem.className= prev +new_cls+ next;
+        return true;
+    }
+    export let getStyle :(obj:HTMLElement,attr:string)=>string;
+    if((element_wrapper as any).currentStyle){
+        getStyle = (obj:HTMLElement,attr:string):string=>(obj as any).currentStyle[attr];
+    }else {
+        getStyle = (obj:HTMLElement,attr:string):string=>{
+            let f:any = false;
+            return getComputedStyle(obj,f)[attr];
+        };
+    }
+    
+
+    class NullObject{};
+    class UndefinedObject{};
+
+    export enum ModelChangeTypes{
+        value,
+        add,
+        remove
+    }
+
+    export interface IModelChangeEventArgs{
+        value:any;
+        index:number;
+        changeType:ModelChangeTypes;
+        sender:Model
+    }
+    
+    export class Model extends Observable{
+        $target:object;
+        $name:string|number;
+        $superior:Model;
+        $members:{[name:string]:Model};
+        $item_model:Model;
+        constructor(name:string|number,target?:object,superior?:Model){
+            super();
+            this.$target = target ||{};
+            this.$name = name;
+            this.$superior = superior;
+        }
+        get_value(){
+            return this.$target[this.$name];
+        }
+
+        find_member(name:string,sure?:boolean):Model{
+            let member = (this.$members || (this.$members={}))[name];
+            if(!member && sure) {
+                let target = this.$target[this.$name] ||( this.$target[this.$name] ={});
+                member =(this as any)[name]= new Model(name,target,this)
+            }
+            return member;
+        }
+        
+        
+        as_array():Model{
+            let value = this.$target[this.$name];
+            if(!is_array(value)) value = this.$target[this.$name] = [];
+            return this.$item_model = new Model("#index",value,this);
+        }
+        update_model(value:any):Model{
+            if(this.$item_model) return this._update_array(value);
+            else if(this.$members) return this._update_object(value);
+            else return this._update_value(value);
+        }
+
+        clone_self(target?:any):Model{
+            if(!target){
+                if(this.$item_model) target = [];
+                else if(this.$members) target = {};
+            }
+            let model = new Model(this.$name,target,this);
+            let modelValue = model.get_value();
+            if(this.$members)for(let n in this.$members){
+               (model as any)[n]=model.$members[n] = this.$members[n].clone_self(modelValue);
+            }
+            if(this.$subscribers){
+                let subscribers = model.$subscribers=[];
+                for(let i in this.$subscribers) subscribers[i] = this.$subscribers[i];
+            }
+            return model;
+        }
+
+        private _update_value(value:any):Model{
+            let modelValue = this.$target[this.$name];
+            if(modelValue!==value){
+                this.$target[this.$name] = value;
+                this.publish({target:this.$target,name:this.$name,value:value,type:ModelChangeTypes.value,sender:this});
+            }
+            return this;
+        }
+
+        private _update_object(value:any):Model{
+            let modelValue = this.$target[this.$name];
+            if(value===null || value===undefined || typeof value!=="object"){
+                modelValue.__YA_IS_NULL__=true;
+                for(let n in this.$members) this.$members[n].update_model(undefined);
+                return this;
+            };
+            for(let n in this.$members) this.$members[n].update_model(value[n]);
+            return this;
+        }
+        private _update_array(value:any):Model{
+            let modelValue = this.$target[this.$name];
+            //如果不是数组或设置为空了，就发送消息
+            if(value===null || value===undefined || !is_array(value)){
+                modelValue.__YA_IS_NULL__=true;
+                this.publish({target:this.$target,name:this.$name,value:value,type:ModelChangeTypes.value});
+                return this;
+            };
+            let removed:Model[]=[];
+            for(let i =0,j=value.length;i<j;i++){
+                let newValue = value[i];
+                let itemModel = this.$members[i];
+                if(itemModel)itemModel.update_model(newValue);
+                else{
+                    itemModel = this.$members[i] = this.$item_model.clone_self(modelValue);
+                } 
+            }
+            
+            for(let i =value.length,j=modelValue.length-1;i<=j;j--){
+                let itemModel = this.$members[j];
+                delete this.$members[j];
+                let itemValue = modelValue.pop();
+                itemModel.publish({target:this.$target,name:this.$name,value:itemValue,type:ModelChangeTypes.remove,sender:itemModel});
+            }
+
+            return this;
+        }
+    }
+    enum MemberAccessorTargetType{
+        current,
+        root,
+        context
+    }
+    interface IMemberAccessorInfo{
+        value_model:Model;
+        targetType:MemberAccessorTargetType;
+        dpath:DPath;
+        get_scope_model:(context:any)=>Model;
+    }
+
+    export class VAttribute{
+        name:string;
+        value:any;
+        dep_accessors:IMemberAccessorInfo[];
+
+        /**
+         * 双向绑定监听
+         * eventId 要监听的事件
+         * 如何获取控件值
+         * @memberof VAttribute
+         */
+        bibind_events_handers:{[eventId:string]:(relem:HTMLElement,attr:VAttribute)=>any};
+        constructor(name:string,value:any,scope:VScope){
+            this.name = name;
+            this.value=value;
+            
+        }
+        parseSibind(valueText:string,scope:VScope){
+            let accessInfo = this.findMemberAccessor(valueText,scope);
+            (this.dep_accessors ||(this.dep_accessors=[])).push(accessInfo);
+        }
+        parseBibind(valueText:string,scope:VScope){
+            let accessInfo = this.findMemberAccessor(valueText,scope);
+            (this.dep_accessors ||(this.dep_accessors=[])).push(accessInfo);
+        }
+        
+        protected findMemberAccessor(valueText:string,scope:VScope):IMemberAccessorInfo{
+            let dpathtexts = valueText.split(".");
+            let first = dpathtexts.shift();
+            let targetType = MemberAccessorTargetType.current;
+            let get_model:any;
+            let model:Model;
+            if(first==="$") {
+                model = scope.root;
+                targetType  = MemberAccessorTargetType.root;
+                get_model =(context)=>context.model;
+            }else if(first[0]=="$"){
+                model = scope.getVariable(first);
+                if(!model) throw new Exception(`无法在上下文找到变量:${first}`);
+                targetType= MemberAccessorTargetType.context;
+                get_model =(context)=>context.variable(first);
+            }else{
+                model = scope.model;
+                get_model=(context)=>context.model;
+                dpathtexts.unshift(first);
+            } 
+            
+            for(let i in dpathtexts){
+                model =model.find_member(dpathtexts[i],true);
+            }
+            return {
+                get_scope_model:get_model,
+                dpath:DPath.fetch(dpathtexts.join(".")),
+                targetType:targetType,
+                value_model:model
+            };
+        }
+        refreshView(relem:HTMLElement,value:any){
+            let tag =relem.tagName;
+            if(tag==="INPUT"){
+                let type = (relem as HTMLInputElement).type;
+                if(type==="radio"){
+
+                }
+                (relem as HTMLInputElement).value=value.toString();
+            }else if(tag==="TEXTAREA"){
+                (relem as HTMLInputElement).value=value.toString();
+            }else if(tag==="SELECT"){
+                let ops = (relem as HTMLSelectElement).options;
+                let noneOp :HTMLOptionElement;
+                let noneIndex:number=0;
+                let selectedIndex :number=-1;
+                for(let i =0,j=ops.length;i<j;i++){
+                    let op = ops[i];
+                    if(op.value==value){
+                        op.selected = true;
+                        selectedIndex = i;break;
+                    }
+                    if(op.value==="") {noneOp=op;noneIndex=i;}
+                }
+                if(selectedIndex==-1 && noneOp){
+                    noneOp.selected = true;
+                    selectedIndex = noneIndex;
+                }
+                (relem as HTMLSelectElement).selectedIndex= selectedIndex;
+                (relem as HTMLSelectElement).value = value;
+            }
+            
+        }
+
+        getModelValue:Function;
+
+        /**
+         * 单向绑定算法 model->view
+         *
+         * @param {HTMLElement} relem
+         * @param {*} context
+         * @returns
+         * @memberof VAttribute
+         */
+        bind(relem:HTMLElement,context:any){
+            let valueModel1:Model;
+            let valueModels:Model[] = [];
+            for(let i in this.dep_accessors){
+                let accessorInfo = this.dep_accessors[i];
+                let scopeModel = accessorInfo.get_scope_model(context);
+                let valueModel:Model = accessorInfo.dpath.getValue(scopeModel);
+                if(!valueModel1) valueModel1= valueModel;
+                valueModel.subscribe((evt)=>this.refreshView(relem,getModelValue()));
+                valueModels.push(valueModel);
+            }
+            let getModelValue:()=>any;
+            if(this.dep_accessors.length==1){
+                getModelValue=() =>this.getModelValue(valueModel1.get_value());
+            }else{
+                getModelValue=()=>{
+                    let args = [];
+                    for(let i in valueModels){
+                        args.push(valueModels[i].get_value());
+                    }
+                    return this.getModelValue.apply(this,args);
+                };
+            }
+
+            return this;
+        }
+    }
+
+    
+
+    
+    export class VScope{
+        model:Model;
+        root:Model;
+        controller:any;
+        parent:VScope;
+        variables:{[name:string]:Model};
+        getVariable(name:string):Model{
+            let rs :Model;
+            if(this.variables){
+                if(rs = this.variables[name])return rs;
+            }
+            if(this.parent) rs = this.parent.find(name,true);
+            return rs;
+        }
+        
+    }
+    export class VElement{
+        tag:string;
+        attrs:VAttribute[];
+        children:VElement[];
+        parent:VElement;
+        scope:VScope;
+        public constructor(info:ElementInfo){
+
+        }
+
+        render(container:HTMLElement):HTMLElement{
+            let relem = document.createElement(this.tag);
+            if(container) container.appendChild(relem);
+            if(this.attrs){
+                for(let i in this.attrs){
+                    this.attrs[i].bind(relem,this);
+                }
+            }
+            if(this.children){
+                for(let i in this.children){
+                    let child = this.children[i];
+                    child.render(relem);
+                }
+            }
+            return relem;
+        }
+    }
+
+    
+    interface ElementInfo{
+        tag:string;
+        attrs:{[name:string]:any};
+        children:ElementInfo[];
+    }
+
+    function createVElement(tag:string|ElementInfo,attrs?:{[index:string]:any},children?:ElementInfo[]){
+        let info:ElementInfo;
+        if(typeof tag==="string"){
+            info = {
+                tag:tag,attrs:attrs,children:children
+            };
+        }else info = tag as ElementInfo;
+
+    }
+    export class View{
+        constructor(elem:HTMLElement){
+
+        }
+    }
+    
 }

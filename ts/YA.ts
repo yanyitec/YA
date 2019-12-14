@@ -22,12 +22,7 @@ namespace YA{
      * ajax 函数，本框架不实现，由外部框架注入
      *========================================================*/
 
-    export interface IAjaxOpts{
-        method?:string;
-        url?:string;
-        data?:string;
-        nocache?:boolean;
-    }
+    
 
     export function ajax<T>(opts:IAjaxOpts):IThenable<T>{
         return null;
@@ -323,106 +318,68 @@ return funcs;
         raw:IEventHandler;
         capture:object;
     }
-    export interface IObservable{
-        subscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable;
-        unsubscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable;
-        notify(event:string,args:IEventArgs):IObservable;
-        get_eventHandlers(event:string,addIfNone?:boolean):IFuncs;
-    }
+    // export interface IObservable{
+    //     subscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable;
+    //     unsubscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable;
+    //     notify(event:string,args:IEventArgs):IObservable;
+    //     get_eventHandlers(event:string,addIfNone?:boolean):IFuncs;
+    // }
     
 
-    export class Observable implements IObservable{
-        private _eventMaps:{[evtName:string]:IFuncs};
+    // export class Observable implements IObservable{
+    //     private _eventMaps:{[evtName:string]:IFuncs};
 
-        constructor(injectTaget?:Function|object){
-            if(injectTaget)xable(injectTaget,Observable);
-        }
+    //     constructor(injectTaget?:Function|object){
+    //         if(injectTaget)xable(injectTaget,Observable);
+    //     }
 
-        subscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable{
-            let handlers = this.get_eventHandlers(event,true);
-            handlers.add(capture?{handler:handler,capture:this,src:handler}:handler);
-            return this;
-        }
-        unsubscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable{
-            if(event==="<clear-all>") {
-                this._eventMaps = undefined;
-                return this;
-            } 
-            let maps = this._eventMaps;
-            if(maps) {
-                let handlers = maps[event];
-                if(handlers) handlers.remove(capture?{handler:handler,src:handler,capture:this}:handler);
-            }
-            return this;
-        }
+    //     subscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable{
+    //         let handlers = this.get_eventHandlers(event,true);
+    //         handlers.add(capture?{handler:handler,capture:this,src:handler}:handler);
+    //         return this;
+    //     }
+    //     unsubscribe(event:string,handler:IEventHandler,capture?:boolean):IObservable{
+    //         if(event==="<clear-all>") {
+    //             this._eventMaps = undefined;
+    //             return this;
+    //         } 
+    //         let maps = this._eventMaps;
+    //         if(maps) {
+    //             let handlers = maps[event];
+    //             if(handlers) handlers.remove(capture?{handler:handler,src:handler,capture:this}:handler);
+    //         }
+    //         return this;
+    //     }
 
-        notify(event:string,args:IEventArgs):IObservable{
-            let maps = this._eventMaps;
-            if(maps) {
-                let handlers = maps[event];
-                if(handlers)handlers.call(this,args);
-            }
-            return this;
-        }
-        get_eventHandlers(event:string,addIfNone?:boolean):IFuncs{
-            let maps = this._eventMaps || (this._eventMaps={});
-            let handlers = maps[event];
-            if(!handlers && addIfNone) maps[event]=handlers=createFuncs(2
-                ,(handler:any)=>(handler as IEventCapture).handler||handler
-                ,(e1,e2)=>e1===e2||(e1.capture===e2.capture&& e1.raw==e2.raw)
-            );
-            return handlers;
-        }
-    }
+    //     notify(event:string,args:IEventArgs):IObservable{
+    //         let maps = this._eventMaps;
+    //         if(maps) {
+    //             let handlers = maps[event];
+    //             if(handlers)handlers.call(this,args);
+    //         }
+    //         return this;
+    //     }
+    //     get_eventHandlers(event:string,addIfNone?:boolean):IFuncs{
+    //         let maps = this._eventMaps || (this._eventMaps={});
+    //         let handlers = maps[event];
+    //         if(!handlers && addIfNone) maps[event]=handlers=createFuncs(2
+    //             ,(handler:any)=>(handler as IEventCapture).handler||handler
+    //             ,(e1,e2)=>e1===e2||(e1.capture===e2.capture&& e1.raw==e2.raw)
+    //         );
+    //         return handlers;
+    //     }
+    // }
 
     /*=========================================================
      * 网页处理
      *========================================================*/
 
-    export function createElement(tagName:string){
-        return document.createElement(tagName);
-    }
+    // export function createElement(tagName:string){
+    //     return document.createElement(tagName);
+    // }
 
-    export let getStyle = (obj:HTMLElement,attr:string):string =>{
-        if((obj as any).currentStyle){//兼容IE
-            getStyle = YA.getStyle = (obj:HTMLElement,attr:string):string=>(obj as any).currentStyle[attr];
-        }else{
-            getStyle = YA.getStyle = (obj:HTMLElement,attr:string):string=>{
-                let f:any = false;
-                return getComputedStyle(obj,f)[attr];
-            };
-        }
-        return getStyle(obj,attr);
-    }
-    export let attach = (elem:HTMLElement,event:string,handler:Function)=>{
-        if(elem.addEventListener){
-            attach = YA.attach = (elem:HTMLElement,event:string,handler:Function)=>elem.addEventListener(event,handler as any,false);
-        }else {
-            attach = YA.attach = (elem:HTMLElement,event:string,handler:Function)=>(elem as any).attachEvent("on" +event,handler as any);
-        }
-        return attach(elem,event,handler);
-    }
-    export let detech = (elem:HTMLElement,event:string,handler:Function)=>{
-        if(elem.removeEventListener){
-            detech = YA.detech = (elem:HTMLElement,event:string,handler:Function)=>elem.removeEventListener(event,handler as any,false);
-        }else {
-            detech = YA.detech = (elem:HTMLElement,event:string,handler:Function)=>(elem as any).detechEvent("on" +event,handler as any);
-        }
-        return detech(elem,event,handler);
-    }
-
-    export function replaceClass(element:HTMLElement,addedCss:string,removeCss?:string){
-        let clsText = element.className||"";
-        let clsNames = ((element.classList as any) as string[]) || clsText.split(/\s+/g);
-        let cs :string[]= [];
-        for(let i =0,j= clsNames.length;i<j;i++){
-            let clsn = clsNames[i];
-            if(clsn==="" || clsn===addedCss || clsn===removeCss) continue;
-            cs.push(clsn);
-        }
-        cs.push(addedCss);
-        element.className = cs.join(" ");
-    }
+    
+    
     export function isInview(element:HTMLElement):boolean{
         let doc = element.ownerDocument;
         while(element){
@@ -794,7 +751,6 @@ return funcs;
                 }else {
                     ajax({
                         url:this.opts.url
-                        ,nocache:true
                         ,data:this.data
                     });
                 }
