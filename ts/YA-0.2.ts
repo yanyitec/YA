@@ -218,7 +218,7 @@ namespace YA{
         extras?:any;
         sender?:IEventable;
     }
-    interface EventListener{
+    export interface IEventListener{
         listener:(evtArgs:IEventArgs)=>any;
         extras?:any;
     }
@@ -231,7 +231,7 @@ namespace YA{
      * @implements {IEventable}
      */
     export class Eventable implements IEventable{
-        protected _events:{[eventId:string]:EventListener[]};
+        protected _events:{[eventId:string]:IEventListener[]};
         attachEvent(eventId:string,listener:(evtArgs:IEventArgs)=>any,extras?:any):IEventable{
             let events = this._events ||(this._events={});
             let listeners = events[eventId]||(events[eventId]=[]);
@@ -1665,12 +1665,12 @@ namespace YA{
             return this;
         }
     }
-    enum MemberAccessorTargetType{
+    export enum MemberAccessorTargetType{
         current,
         root,
         context
     }
-    interface IMemberAccessorInfo{
+    export interface IMemberAccessorInfo{
         value_model:Model;
         targetType:MemberAccessorTargetType;
         dpath:DPath;
@@ -1819,7 +1819,7 @@ namespace YA{
             if(this.variables){
                 if(rs = this.variables[name])return rs;
             }
-            if(this.parent) rs = this.parent.find(name,true);
+            if(this.parent) rs = this.parent.getVariable(name);
             return rs;
         }
         
@@ -1830,7 +1830,7 @@ namespace YA{
         children:VElement[];
         parent:VElement;
         scope:VScope;
-        public constructor(info:ElementInfo){
+        public constructor(info:IElementInfo){
 
         }
 
@@ -1853,19 +1853,19 @@ namespace YA{
     }
 
     
-    interface ElementInfo{
+    export interface IElementInfo{
         tag:string;
         attrs:{[name:string]:any};
-        children:ElementInfo[];
+        children:IElementInfo[];
     }
 
-    function createVElement(tag:string|ElementInfo,attrs?:{[index:string]:any},children?:ElementInfo[]){
-        let info:ElementInfo;
+    function createVElement(tag:string|IElementInfo,attrs?:{[index:string]:any},children?:IElementInfo[]){
+        let info:IElementInfo;
         if(typeof tag==="string"){
             info = {
                 tag:tag,attrs:attrs,children:children
             };
-        }else info = tag as ElementInfo;
+        }else info = tag as IElementInfo;
 
     }
     export class View{
